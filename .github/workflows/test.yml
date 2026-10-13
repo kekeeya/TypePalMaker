@@ -52,12 +52,13 @@ jobs:
             lipo -archs "$app/Contents/MacOS/TypePal"
             codesign --verify --strict --deep "$app"
 
-            # Downloaded: Gatekeeper may only ask for "Open Anyway" (ad hoc,
-            # not notarized), never call it damaged.
+            # Downloaded: Gatekeeper turns it away only as not notarized
+            # (plain "rejected", which "Open Anyway" lifts), never as damaged
+            # (a signature error, which nothing lifts).
             xattr -w com.apple.quarantine "0081;$(printf %x "$(date +%s)");Safari;" "$app"
-            findings=$(syspolicy_check distribution "$app" 2>&1 | grep -E '^[A-Z][A-Za-z ]+$' | sort -u | paste -sd, -)
-            echo "Gatekeeper: $findings"
-            test "$findings" = "Adhoc Signed App,Notary Ticket Missing"
+            verdict=$(spctl --assess --type execute "$app" 2>&1 || true)
+            echo "Gatekeeper: $verdict"
+            test "$verdict" = "$app: rejected"
 
             # Runs, and keeps running.
             "$app/Contents/MacOS/TypePal" > pet.log 2>&1 &
