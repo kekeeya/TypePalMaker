@@ -1,0 +1,69 @@
+{
+  "fps": 8,
+  "canvas": {
+    "width": 384,
+    "height": 384
+  },
+  "alignment": {
+    "bodyCenterX": 192,
+    "bodyBaselineY": 290
+  },
+  "restingBody": {
+    "width": 191,
+    "height": 151
+  },
+  "expectedBodyMotion": {
+    "mouseClick": [
+      2,
+      3
+    ],
+    "tap": [
+      2,
+      3
+    ]
+  },
+  "states": {
+    "idle": [
+      "idle-01.png",
+      "idle-02.png",
+      "idle-03.png",
+      "idle-04.png",
+      "idle-05.png",
+      "idle-06.png",
+      "idle-07.png",
+      "idle-08.png",
+      "idle-09.png",
+      "idle-10.png",
+      "idle-11.png",
+      "idle-12.png",
+      "idle-13.png",
+      "idle-14.png",
+      "idle-15.png",
+      "idle-16.png"
+    ],
+    "typing": [
+      "typing-01.png",
+      "typing-02.png",
+      "typing-03.png",
+      "typing-04.png"
+    ],
+    "mouseClick": [
+      "mouse-click-01.png",
+      "mouse-click-02.png",
+      "mouse-click-03.png",
+      "mouse-click-04.png"
+    ],
+    "tap": [
+      "tap-01.png",
+      "tap-02.png",
+      "tap-03.png",
+      "tap-04.png"
+    ],
+    "pet": [
+      "pet-01.png",
+      "pet-02.png",
+      "pet-03.png",
+      "pet-04.png"
+    ]
+  }
+}

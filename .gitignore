@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+._*
+
+# Build output
+.build/
+build/
+dist/
+*.app
+*.dmg
+*.zip
+DerivedData/
+xcuserdata/
+.swiftpm/
+
+
+# Node / Tauri (M1)
+node_modules/
+*.tsbuildinfo
+maker/public/template/
+target/

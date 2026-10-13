@@ -1,0 +1,33 @@
+[package]
+name = "typepal-maker"
+version = "0.1.0"
+description = "Make your own TypePal desktop pet"
+authors = ["keya"]
+license = "MIT"
+repository = "https://github.com/kekeeya"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "typepal_maker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.12.3", features = [] }
+tauri-plugin-dialog = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+tempfile = "3"
+
+[dev-dependencies]
+
+# Image decoding and resizing are unbearably slow unoptimised (~50s to
+# generate one pet in a debug build). Dependencies are always optimised;
+# our own code still builds fast for development.
+[profile.dev.package."*"]
+opt-level = 3

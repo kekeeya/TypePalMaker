@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kekeeya/TypePalMaker/schema/manifest.schema.json",
+  "title": "TypePal pet manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "name",
+    "id",
+    "display",
+    "frames",
+    "states"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,40}$"
+    },
+    "display": {
+      "type": "object",
+      "required": [
+        "height"
+      ],
+      "properties": {
+        "height": {
+          "type": "number",
+          "minimum": 32,
+          "maximum": 1024
+        }
+      }
+    },
+    "canvas": {
+      "type": "object",
+      "description": "Maker only: the canvas every frame is drawn into (pixels, dpi). The runtime ignores it.",
+      "required": [
+        "width",
+        "height",
+        "dpi"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dpi": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "iconStyle": {
+      "type": "object",
+      "description": "Maker only: how icon.png is placed on the app icon (offsets in 512-px icon units, scale and rotation about the icon's centre, background colour). The runtime ignores it.",
+      "properties": {
+        "background": {
+          "type": "string"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "offsetX": {
+          "type": "number"
+        },
+        "offsetY": {
+          "type": "number"
+        },
+        "rotation": {
+          "type": "number"
+        }
+      }
+    },
+    "frames": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "states": {
+      "type": "object",
+      "required": [
+        "idle"
+      ],
+      "properties": {
+        "idle": {
+          "$ref": "#/$defs/state"
+        },
+        "typing": {
+          "$ref": "#/$defs/state"
+        },
+        "mouseClick": {
+          "$ref": "#/$defs/state"
+        },
+        "tap": {
+          "$ref": "#/$defs/state"
+        },
+        "pet": {
+          "$ref": "#/$defs/state"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "state": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "fps",
+        "loop",
+        "frames"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "fps": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 60
+        },
+        "loop": {
+          "type": "boolean",
+          "description": "Informational: the runtime loops idle and plays every other state once per trigger, whatever this says."
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "duration": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Milliseconds; overrides 1/fps for this frame"
+                  },
+                  "scale": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Maker placement: scale of the fitted picture; baked into the picture when the app is generated"
+                  },
+                  "offsetX": {
+                    "type": "number",
+                    "description": "Maker placement: horizontal offset in canvas pixels; baked on generation"
+                  },
+                  "offsetY": {
+                    "type": "number",
+                    "description": "Maker placement: vertical offset in canvas pixels; baked on generation"
+                  },
+                  "rotation": {
+                    "type": "number",
+                    "description": "Maker placement: rotation in degrees about the picture's bottom centre; baked on generation"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
