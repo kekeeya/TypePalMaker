@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
@@ -37,6 +37,28 @@ const images: ImageOps = {
   fitHeight: async (data) => data,
   makeIcns: async (icon) => packIcns(new Map(ICNS_TYPES.map(([, size]) => [size, icon]))),
 };
+
+/** The built-in mascot as a baked project: real pictures, every reaction. */
+function mascotProject(): Uint8Array {
+  const dir = join(__dirname, "../../../public/assets/typepal-frames");
+  const animation = JSON.parse(readFileSync(join(dir, "animation.json"), "utf8"));
+  const files: Record<string, Uint8Array> = {};
+  const frames: Record<string, { file: string }> = {};
+  const states: Record<string, unknown> = {};
+  for (const state of ["idle", "typing", "mouseClick", "tap", "pet"]) {
+    const ids: string[] = (animation.states[state] ?? []).map((f: string) => f.replace(/\.png$/, ""));
+    for (const id of ids) {
+      files[`frames/${id}.png`] = new Uint8Array(readFileSync(join(dir, `${id}.png`)));
+      frames[id] = { file: `frames/${id}.png` };
+    }
+    states[state] = { enabled: ids.length > 0, fps: animation.fps, loop: state === "idle", frames: ids };
+  }
+  files["icon.png"] = files["frames/idle-01.png"];
+  files["manifest.json"] = strToU8(
+    JSON.stringify({ schemaVersion: 1, name: "TypePal", id: "smoke", display: { height: 192 }, frames, states }),
+  );
+  return zipSync(files);
+}
 
 /** A baked project zip, as the web platform hands it to `buildApp`. */
 function project(name: string, states: Record<string, number>): Uint8Array {
@@ -123,7 +145,22 @@ describe.runIf(haveTemplate && onMac)("apps built in the browser pass macOS's ow
   ];
 
   it.each(cases)("%s", async (_label, name, states) => {
-    const built = await buildApp(project(name, states), template(), images);
+    await check(await buildApp(project(name, states), template(), images), name, Object.values(states).reduce((a, b) => a + b, 0));
+  });
+
+  // The mascot, with real pictures: CI keeps it (TYPEPAL_SMOKE_DIR) to
+  // launch it on Apple silicon.
+  it("the mascot", async () => {
+    const app = await check(await buildApp(mascotProject(), template(), images), "TypePal", 0);
+    const keep = process.env.TYPEPAL_SMOKE_DIR;
+    if (keep) {
+      mkdirSync(keep, { recursive: true });
+      execFileSync("ditto", [app, join(keep, "web.app")]);
+    }
+  });
+
+  /** Unpacks the download and checks it as macOS would; returns the app. */
+  async function check(built: Awaited<ReturnType<typeof buildApp>>, name: string, frameCount: number) {
     expect(built.appName).toBe(`${fileSafe(name)}.app`);
 
     const zipPath = join(dir, `${built.appName}.zip`);
@@ -139,18 +176,19 @@ describe.runIf(haveTemplate && onMac)("apps built in the browser pass macOS's ow
     expect(JSON.parse(info)).toMatchObject({
       CFBundleName: name,
       CFBundleDisplayName: name,
-      CFBundleIdentifier: "io.typepal.pet.test1234",
+      CFBundleIdentifier: expect.stringMatching(/^io\.typepal\.pet\.(test1234|smoke)$/),
       CFBundleIconFile: "AppIcon",
       CFBundleExecutable: "TypePal",
     });
 
     // Only the frames playing states use, as the desktop generator writes.
     const manifest = JSON.parse(readFileSync(join(app, "Contents/Resources/Pet/manifest.json"), "utf8"));
-    const expected = Object.values(states).reduce((a, b) => a + b, 0);
-    expect(Object.keys(manifest.frames)).toHaveLength(expected);
+    if (frameCount) expect(Object.keys(manifest.frames)).toHaveLength(frameCount);
     expect(manifest.frames.unused).toBeUndefined();
     for (const { file } of Object.values(manifest.frames) as { file: string }[]) {
       expect(existsSync(join(app, "Contents/Resources/Pet", file))).toBe(true);
     }
-  });
+    expect(readdirSync(join(app, "Contents/Resources/Pet/frames"))).toHaveLength(Object.keys(manifest.frames).length);
+    return app;
+  }
 });

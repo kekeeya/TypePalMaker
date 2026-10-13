@@ -420,6 +420,12 @@ mod end_to_end {
         // Nothing left behind but the app itself.
         let leftovers: Vec<_> = fs::read_dir(out.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(leftovers, vec![std::ffi::OsString::from("TestPet.app")]);
+
+        // CI keeps it to launch on Apple silicon.
+        if let Some(keep) = std::env::var_os("TYPEPAL_SMOKE_DIR") {
+            fs::create_dir_all(&keep).unwrap();
+            assert!(Command::new("ditto").arg(&app).arg(Path::new(&keep).join("desktop.app")).status().unwrap().success());
+        }
     }
 
     /// A project as the Maker sends it (baked), from `TYPEPAL_TEST_PROJECT`.

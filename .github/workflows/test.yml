@@ -1,0 +1,68 @@
+# Every test, on an Apple silicon Mac: the pet, the Maker, and both ways of
+# building a pet app. The apps made are then checked as a downloaded app is
+# (signature and Gatekeeper's verdict) and launched for a few seconds.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Apple silicon
+        run: |
+          test "$(uname -m)" = arm64
+          # Where the tests leave the apps they build, for the last step.
+          echo "TYPEPAL_SMOKE_DIR=$RUNNER_TEMP/smoke" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: maker/package-lock.json
+
+      - name: Pet tests
+        working-directory: player
+        run: swift test
+
+      - name: Pet template
+        run: player/build-app.sh
+
+      - name: Maker tests
+        working-directory: maker
+        run: |
+          npm ci
+          npm run build
+          npx vitest run
+
+      - name: Generator tests
+        working-directory: maker/src-tauri
+        run: cargo test
+
+      - name: Generated pets, as downloaded and launched
+        run: |
+          for app in "$TYPEPAL_SMOKE_DIR/web.app" "$TYPEPAL_SMOKE_DIR/desktop.app"; do
+            echo "== $app"
+            lipo -archs "$app/Contents/MacOS/TypePal"
+            codesign --verify --strict --deep "$app"
+
+            # Downloaded: Gatekeeper may only ask for "Open Anyway" (ad hoc,
+            # not notarized), never call it damaged.
+            xattr -w com.apple.quarantine "0081;$(printf %x "$(date +%s)");Safari;" "$app"
+            findings=$(syspolicy_check distribution "$app" 2>&1 | grep -E '^[A-Z][A-Za-z ]+$' | sort -u | paste -sd, -)
+            echo "Gatekeeper: $findings"
+            test "$findings" = "Adhoc Signed App,Notary Ticket Missing"
+
+            # Runs, and keeps running.
+            "$app/Contents/MacOS/TypePal" > pet.log 2>&1 &
+            pid=$!
+            sleep 8
+            kill -0 "$pid" || { cat pet.log; exit 1; }
+            kill "$pid"
+          done
