@@ -15,10 +15,14 @@
 
 <p align="center"><img src=".github/readme/banner-en.jpg" alt="TypePal Maker" width="70%"></p>
 
-   | 可用版本 | 说明 |
-   |---|---|
-   | 网页版 | 直接访问 [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) 制作桌宠&下载 |
-   | 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载最新的 `.dmg` 离线制作 |
+<div align="center">
+
+| 可用版本 | 说明 |
+|:---:|:---:|
+| 网页版 | 直接访问 [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) 制作桌宠&下载 |
+| 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载最新的 `.dmg` 离线制作 |
+
+</div>
 
 ## 功能
 

@@ -15,10 +15,14 @@
 
 <p align="center"><img src=".github/readme/banner-en.jpg" alt="TypePal Maker" width="70%"></p>
 
-   | Version | How to get it |
-   |---|---|
-   | Web | Head to [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) to build your pet in the browser and download it in one click |
-   | Desktop | Download the latest `.dmg` from [Releases](https://github.com/kekeeya/TypePalMaker/releases) to build your pet offline |
+<div align="center">
+
+| Version | How to get it |
+|:---:|:---:|
+| Web | Head to [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) to build your pet in the browser and download it in one click |
+| Desktop | Download the latest `.dmg` from [Releases](https://github.com/kekeeya/TypePalMaker/releases) to build your pet offline |
+
+</div>
 
 ## Features
 
