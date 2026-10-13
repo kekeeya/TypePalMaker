@@ -1,0 +1,83 @@
+# Builds the universal TypePalMaker.dmg on a clean GitHub Mac and attaches it
+# to a draft release, for a pushed version tag (v0.1.0, …). The draft is
+# published by hand once checked.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        run: |
+          version=$(node -p "require('./maker/src-tauri/tauri.conf.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME ≠ version $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: maker/package-lock.json
+
+      - name: Rust targets for both architectures
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Pet template
+        run: player/build-app.sh
+
+      - name: Maker app
+        working-directory: maker
+        run: |
+          npm ci
+          npm run tauri build -- --target universal-apple-darwin --bundles app
+
+      - name: Check the app
+        run: |
+          app=maker/src-tauri/target/universal-apple-darwin/release/bundle/macos/TypePalMaker.app
+          codesign --verify --strict --deep "$app"
+          for bin in "$app/Contents/MacOS/typepal-maker" "$app/Contents/Resources/TypePal.app/Contents/MacOS/TypePal"; do
+            archs=$(lipo -archs "$bin"); echo "$bin: $archs"
+            [[ $archs == *x86_64* && $archs == *arm64* ]] || exit 1
+          done
+
+      - name: Disk image
+        run: |
+          stage=$(mktemp -d)
+          ditto maker/src-tauri/target/universal-apple-darwin/release/bundle/macos/TypePalMaker.app "$stage/TypePalMaker.app"
+          ln -s /Applications "$stage/Applications"
+          dmg="TypePalMaker-$VERSION.dmg"
+          hdiutil create -volname TypePalMaker -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+          echo "DMG=$dmg" >> "$GITHUB_ENV"
+          echo "SHA=$(shasum -a 256 "$dmg" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          ## 安装
+
+          下载 \`$DMG\`，把 TypePalMaker 拖进「应用程序」。
+
+          第一次打开会被拦下（没有 Apple 开发者证书），走：**系统设置 → 隐私与安全性 → 「仍要打开」**。
+
+          用 TypePalMaker 生成的桌宠直接双击就能打开，不需要再放行。
+
+          ## 校验
+
+          \`\`\`
+          SHA-256  $SHA  $DMG
+          \`\`\`
+
+          核对方法：\`shasum -a 256 $DMG\`
+          EOF
+          gh release create "$GITHUB_REF_NAME" "$DMG" --draft --title "$GITHUB_REF_NAME" --notes-file notes.md
