@@ -6,8 +6,12 @@ name: Test
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md", ".github/readme/**", "LICENSE"]
   pull_request:
+    paths-ignore: ["**.md", ".github/readme/**", "LICENSE"]
   workflow_dispatch:
+  # The release runs it first, and builds only if it passes.
+  workflow_call:
 
 jobs:
   test:

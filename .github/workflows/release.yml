@@ -1,6 +1,6 @@
 # Builds the universal TypePalMaker.dmg on a clean GitHub Mac and attaches it
-# to a draft release, for a pushed version tag (v0.1.0, …). The draft is
-# published by hand once checked.
+# to a draft release, for a pushed version tag (v0.1.0, …), once every test
+# has passed. The draft is published by hand once checked.
 name: Release
 
 on:
@@ -11,7 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   dmg:
+    needs: test
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
