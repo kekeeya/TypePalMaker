@@ -1,5 +1,6 @@
 import type { Platform } from "../platform";
 import { opaqueBounds } from "./bounds";
+import { withDraftList } from "./editLock";
 import { drawPlaced } from "./placement";
 import { decodeProject, encodeProject } from "./projectFile";
 import type { Project } from "./types";
@@ -37,16 +38,20 @@ export async function saveDraft(platform: Platform, project: Project): Promise<v
   await platform.storeSet(projectKey(project.id), encodeProject(project));
   const thumb = await thumbnail(project);
   if (thumb) await platform.storeSet(thumbKey(project.id), thumb);
-  const others = (await listDrafts(platform)).filter((d) => d.id !== project.id);
-  // Every project stays listed: the list is the only way back to a project,
-  // so it is never trimmed (the home page scrolls instead).
-  const list = [{ id: project.id, name: project.name, updatedAt: Date.now() }, ...others];
-  await platform.storeSet(INDEX, new TextEncoder().encode(JSON.stringify(list)));
+  await withDraftList(async () => {
+    const others = (await listDrafts(platform)).filter((d) => d.id !== project.id);
+    // Every project stays listed: the list is the only way back to a project,
+    // so it is never trimmed (the home page scrolls instead).
+    const list = [{ id: project.id, name: project.name, updatedAt: Date.now() }, ...others];
+    await platform.storeSet(INDEX, new TextEncoder().encode(JSON.stringify(list)));
+  });
 }
 
 export async function deleteDraft(platform: Platform, id: string): Promise<void> {
-  const list = (await listDrafts(platform)).filter((d) => d.id !== id);
-  await platform.storeSet(INDEX, new TextEncoder().encode(JSON.stringify(list)));
+  await withDraftList(async () => {
+    const list = (await listDrafts(platform)).filter((d) => d.id !== id);
+    await platform.storeSet(INDEX, new TextEncoder().encode(JSON.stringify(list)));
+  });
   await platform.storeDelete(projectKey(id));
   await platform.storeDelete(thumbKey(id));
 }

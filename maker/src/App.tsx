@@ -13,6 +13,7 @@ import { issueText } from "./i18n/strings";
 import { useT } from "./i18n/useT";
 import { bakeProject, releaseBaked } from "./model/bake";
 import { deleteDraft, listDrafts, loadDraft, saveDraft, type DraftInfo } from "./model/drafts";
+import { claimProject, openElsewhere, releaseProject } from "./model/editLock";
 import { decodeProject, encodeProject } from "./model/projectFile";
 import { templateProject } from "./model/template";
 import { emptyProject, newId, PET_STATES, type PetState, type Project } from "./model/types";
@@ -80,6 +81,14 @@ export function App() {
     setDrafts(await listDrafts(platform));
   }, [platform]);
 
+  // Another tab may have saved or deleted projects meanwhile.
+  useEffect(() => {
+    if (view !== "home" || !platform) return;
+    const refresh = () => void listDrafts(platform).then(setDrafts);
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [view, platform]);
+
   // Every edit is kept a moment later, so "所有更改已自动保存" holds.
   useEffect(() => {
     if (view === "home") return;
@@ -89,7 +98,13 @@ export function App() {
 
   /** Opens a project in the editor and keeps it among the recent ones. */
   const begin = useCallback(
-    (next: Project) => {
+    async (next: Project) => {
+      // A new project is this tab's alone; an import that another tab has
+      // open meanwhile becomes a copy, as one already in Recent does.
+      if (!(await claimProject(next.id))) {
+        next.id = newId();
+        await claimProject(next.id);
+      }
       loadProject(next);
       setView("general");
       void persist();
@@ -97,19 +112,21 @@ export function App() {
     [loadProject, persist],
   );
 
-  const goHome = () => {
-    void persist();
+  const goHome = async () => {
+    // Saved before letting go, so another tab opening it next gets it whole.
+    await persist();
+    releaseProject();
     setView("home");
   };
 
   const create = (setup: NewPetSetup) => {
     setCreateOpen(false);
-    begin(emptyProject(setup.name, setup.canvas, setup.fps));
+    void begin(emptyProject(setup.name, setup.canvas, setup.fps));
   };
 
   const fromTemplate = async () => {
     try {
-      begin(await templateProject(t.templateName));
+      await begin(await templateProject(t.templateName));
     } catch (e) {
       alert(t.openFailed, String(e));
     }
@@ -117,6 +134,7 @@ export function App() {
 
   const openDraft = async (id: string) => {
     if (!platform) return;
+    if (!(await claimProject(id))) return alert(t.inUseTitle, t.inUseBody);
     try {
       const draft = await loadDraft(platform, id);
       if (!draft) throw new Error("missing");
@@ -124,6 +142,7 @@ export function App() {
       savedRevision.current = useEditor.getState().revision;
       setView("general");
     } catch {
+      releaseProject();
       alert(t.openFailed);
     }
   };
@@ -137,10 +156,12 @@ export function App() {
         {
           label: t.deleteDraft,
           primary: true,
-          onClick: () => {
+          onClick: async () => {
             setDialog(null);
             if (!platform) return;
-            void deleteDraft(platform, draft.id).then(async () => setDrafts(await listDrafts(platform)));
+            if (await openElsewhere(draft.id)) return alert(t.inUseTitle, t.inUseBody);
+            await deleteDraft(platform, draft.id);
+            setDrafts(await listDrafts(platform));
           },
         },
       ],
@@ -155,7 +176,7 @@ export function App() {
       // A project already in Recent keeps its own copy: an older export
       // brought in again becomes a separate project instead of replacing it.
       if (drafts.some((d) => d.id === project.id)) project.id = newId();
-      begin(project);
+      await begin(project);
     } catch {
       alert(t.openFailed);
     }

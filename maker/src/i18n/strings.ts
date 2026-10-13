@@ -133,6 +133,8 @@ const zh = {
   failedTitle: "生成失败",
   ok: "好",
   openFailed: "无法打开这个文件，它可能不是 TypePal 工程。",
+  inUseTitle: "这个工程正在别处编辑",
+  inUseBody: "它已在另一个标签页或窗口中打开，请先关掉那边再试。",
   exportFailed: "工程没有导出成功",
 };
 
@@ -239,6 +241,8 @@ const en: Strings = {
   failedTitle: "Couldn't generate the app",
   ok: "OK",
   openFailed: "This file can't be opened. It may not be a TypePal project.",
+  inUseTitle: "This project is open elsewhere",
+  inUseBody: "It's already open in another tab or window. Close it there, then try again.",
   exportFailed: "The project couldn't be exported",
 };
 
