@@ -13,7 +13,7 @@
    | Web | Head to [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) to build your pet in the browser and download it in one click |
    | Desktop | Download `TypePalMaker.dmg` from [Releases](https://github.com/kekeeya/TypePalMaker/releases) to build your pet offline |
 
-![TypePal](maker/public/assets/typepal-hero.png)
+![TypePal Maker](.github/readme/banner-en.jpg)
 
 ## Features
 

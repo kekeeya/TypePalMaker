@@ -13,7 +13,7 @@
    | 网页版 | 直接访问 [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) 制作桌宠&下载 |
    | 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载 `TypePalMaker.dmg` 离线制作 |
 
-![TypePal](maker/public/assets/typepal-hero.png)
+![TypePal Maker](.github/readme/banner-cn.jpg)
 
 ## 功能
 
