@@ -1,19 +1,24 @@
+<div align="center">
+
 # TypePal Maker
 
 [![Pet Platform](https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black)](#使用方法)
 [![Maker Platform](https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue)](#使用方法)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
 
-简体中文 | [English](README.en.md)
+[![简体中文](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-3b3b5c)](README.md)
+[![English](https://img.shields.io/badge/lang-English-lightgrey)](README.en.md)
 
 **整体零代码！上传图片自由定制Mac打字桌宠！**
+
+</div>
+
+<p align="center"><img src=".github/readme/banner-en.jpg" alt="TypePal Maker" width="70%"></p>
 
    | 可用版本 | 说明 |
    |---|---|
    | 网页版 | 直接访问 [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) 制作桌宠&下载 |
-   | 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载 `TypePalMaker.dmg` 离线制作 |
-
-![TypePal Maker](.github/readme/banner-cn.jpg)
+   | 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载最新的 `.dmg` 离线制作 |
 
 ## 功能
 

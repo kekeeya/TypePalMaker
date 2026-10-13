@@ -1,19 +1,24 @@
+<div align="center">
+
 # TypePal Maker
 
 [![Pet Platform](https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black)](#usage)
 [![Maker Platform](https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue)](#usage)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
 
-[简体中文](README.md) | English
+[![简体中文](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-lightgrey)](README.md)
+[![English](https://img.shields.io/badge/lang-English-3b3b5c)](README.en.md)
 
 **No coding required! Make your own Mac desktop pet from your own pictures!**
+
+</div>
+
+<p align="center"><img src=".github/readme/banner-en.jpg" alt="TypePal Maker" width="70%"></p>
 
    | Version | How to get it |
    |---|---|
    | Web | Head to [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) to build your pet in the browser and download it in one click |
-   | Desktop | Download `TypePalMaker.dmg` from [Releases](https://github.com/kekeeya/TypePalMaker/releases) to build your pet offline |
-
-![TypePal Maker](.github/readme/banner-en.jpg)
+   | Desktop | Download the latest `.dmg` from [Releases](https://github.com/kekeeya/TypePalMaker/releases) to build your pet offline |
 
 ## Features
 
