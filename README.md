@@ -1,40 +1,45 @@
-<div align="center">
+<p align="center">
+  <img src=".github/readme/typepal-idle.gif" alt="TypePal 小团子" width="200">
+</p>
 
-# TypePal Maker
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/tagline-dark.png">
+    <img src=".github/readme/tagline-light.png" alt="Create your own desktop pet." width="360">
+  </picture>
+</p>
 
-[![Pet Platform](https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black)](#使用方法)
-[![Maker Platform](https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue)](#使用方法)
-[![License](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
+<h1 align="center">TypePal Maker</h1>
 
-[![简体中文](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-3b3b5c)](README.md)
-[![English](https://img.shields.io/badge/lang-English-lightgrey)](README.en.md)
+<p align="center"><strong>开源桌宠制作器，上传图片自由定制Mac打字桌宠</strong></p>
 
-**整体零代码！上传图片自由定制Mac打字桌宠！**
+<p align="center">
+  <b>中文</b> | <a href="./README.en.md">English</a>
+</p>
 
-</div>
+<p align="center">
+  <a href="#使用方法"><img src="https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black" alt="Pet Platform"></a>
+  <a href="#使用方法"><img src="https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue" alt="Maker Platform"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License"></a>
+</p>
 
-<p align="center"><img src=".github/readme/banner-en.jpg" alt="TypePal Maker" width="70%"></p>
-
-<div align="center">
-
-| 可用版本 | 说明 |
-|:---:|:---:|
-| 网页版 | 直接访问 [kekeeya.github.io/TypePalMaker](https://kekeeya.github.io/TypePalMaker/) 制作桌宠&下载 |
-| 本地版 | 从 [Releases](https://github.com/kekeeya/TypePalMaker/releases) 下载最新的 `.dmg` 离线制作 |
-
-</div>
+<p align="center">
+  <a href="https://kekeeya.github.io/TypePalMaker/"><img src="https://img.shields.io/badge/%E7%BD%91%E9%A1%B5%E7%89%88-%E5%9C%A8%E7%BA%BF%E5%88%B6%E4%BD%9C-8c84e4?style=for-the-badge" alt="网页版在线制作"></a>
+  <a href="https://github.com/kekeeya/TypePalMaker/releases/latest"><img src="https://img.shields.io/badge/%E6%9C%AC%E5%9C%B0%E7%89%88-%E4%B8%8B%E8%BD%BD%20dmg-46405f?style=for-the-badge&logo=apple&logoColor=white" alt="本地版下载 dmg"></a>
+</p>
 
 ## 功能
 
-| 功能 | 说明 |
-|---|---|
-| 自由配置 5 种反应动画 | 默认（待机）、打字、鼠标点击、点宠物、抚摸 |
-| 动画编辑 | 自定义帧率，可独立配置动画时间轴上每帧图的时长&顺序，以及图片位置、缩放、旋转；支持撤销 / 重做和实时预览动画效果|
-| 实时预览效果 | 制作器包含实时预览功能，方便你及时调整效果 |
-| 自定义桌宠图标 | 默认使用待机状态图片，也可以自由上传定制 |
-| 内置模板 | 内置模板桌宠可直接上手修改；工程自动保存本地，也可导出 `.typepalproj` 本地备份 |
-| 桌宠设置 | 生成的桌宠可调开机自启动、大小、置顶、锁定位置、鼠标穿透等 |
-| 隐私友好 | 桌宠不申请辅助功能、输入监控等任何系统权限，不联网，也不记录你输入的内容 |
+<table>
+  <tr><th nowrap>功能</th><th>说明</th></tr>
+  <tr><td nowrap>自由配置 5 种反应动画</td><td>默认（待机）、打字、鼠标点击、点宠物、抚摸</td></tr>
+  <tr><td nowrap>动画编辑</td><td>自定义帧率，可独立配置动画时间轴上每帧图的时长&顺序，以及图片位置、缩放、旋转；支持撤销 / 重做和实时预览动画效果</td></tr>
+  <tr><td nowrap>实时预览效果</td><td>制作器包含实时预览功能，方便你及时调整效果</td></tr>
+  <tr><td nowrap>自定义桌宠图标</td><td>默认使用待机状态图片，也可以自由上传定制</td></tr>
+  <tr><td nowrap>内置模板</td><td>内置模板桌宠可直接上手修改；工程自动保存本地，也可导出 <code>.typepalproj</code> 本地备份</td></tr>
+  <tr><td nowrap>桌宠设置</td><td>生成的桌宠可调开机自启动、大小、置顶、锁定位置、鼠标穿透等</td></tr>
+  <tr><td nowrap>隐私友好</td><td>桌宠不申请辅助功能、输入监控等任何系统权限，不联网，也不记录你输入的内容</td></tr>
+</table>
 
 ## 使用方法
 
