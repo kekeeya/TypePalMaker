@@ -3,6 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // The Maker is laid out for at least 960 × 640 (the desktop window's
+      // minimum). On a smaller screen (a phone), show that layout whole,
+      // scaled down to fit, instead of cut off; again on turning the phone.
+      if (matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 960) {
+        const viewport = document.querySelector('meta[name="viewport"]');
+        const fit = () => {
+          const long = Math.max(screen.width, screen.height), short = Math.min(screen.width, screen.height);
+          const [w, h] = matchMedia("(orientation: landscape)").matches ? [long, short] : [short, long];
+          viewport.content = `width=${Math.max(960, Math.ceil((w * 640) / h))}`;
+        };
+        fit();
+        matchMedia("(orientation: landscape)").addEventListener("change", fit);
+      }
+    </script>
     <title>TypePalMaker</title>
   </head>
   <body>
