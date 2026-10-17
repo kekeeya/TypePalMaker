@@ -221,8 +221,35 @@ fn percent_decode(input: &str) -> Result<String, String> {
     String::from_utf8(out).map_err(|e| e.to_string())
 }
 
+/// The Maker's interface is drawn by Microsoft Edge WebView2, which Windows 11
+/// and an updated Windows 10 already have. Without it the window could not
+/// show anything: say so, and offer Microsoft's download page.
+#[cfg(windows)]
+fn webview2_missing() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IDOK, MB_ICONWARNING, MB_OKCANCEL, MessageBoxW};
+    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let title = wide("TypePalMaker");
+    let text = wide(
+        "TypePalMaker 需要 Microsoft Edge WebView2 运行库来显示界面，这台电脑还没有安装。\n\
+         点「确定」打开微软官网免费下载，装好后重新打开 TypePalMaker 即可。\n\n\
+         TypePalMaker needs the Microsoft Edge WebView2 Runtime to show its window, and this PC doesn't have it yet. \
+         Click OK to get it free from Microsoft, then open TypePalMaker again.",
+    );
+    let choice = unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OKCANCEL | MB_ICONWARNING) };
+    if choice == IDOK {
+        let _ = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", "https://developer.microsoft.com/microsoft-edge/webview2/"])
+            .spawn();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    if tauri::webview_version().is_err() {
+        webview2_missing();
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![

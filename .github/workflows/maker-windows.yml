@@ -48,6 +48,16 @@ jobs:
           "{0}: {1:N1} MB" -f (Split-Path $zip -Leaf), ((Get-Item $zip).Length / 1MB)
           "ZIP=$zip" >> $env:GITHUB_ENV
 
+
+      # Nothing beyond what every Windows has: no Visual C++ runtime DLLs.
+      - name: Needs nothing extra
+        run: |
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin /nologo /dependents "$env:RUNNER_TEMP\stage\TypePalMaker.exe"
+          $deps
+          $extra = $deps | Select-String -Pattern "vcruntime|msvcp|api-ms-win-crt|ucrtbase"
+          if ($extra) { throw "still needs: $extra" }
+
       - name: Unzip and open it
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing

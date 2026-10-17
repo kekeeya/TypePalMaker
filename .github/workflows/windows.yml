@@ -6,7 +6,7 @@ name: Windows
 
 on:
   push:
-    branches: [main, dev_windows]
+    branches: [main, "dev_windows*"]
     paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
   pull_request:
     paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
@@ -36,6 +36,16 @@ jobs:
         run: |
           cargo build --release
           "{0:N0} KB" -f ((Get-Item target\release\TypePal.exe).Length / 1KB)
+
+
+      # Nothing beyond what every Windows has: no Visual C++ runtime DLLs.
+      - name: Needs nothing extra
+        run: |
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin /nologo /dependents "player-windows\target\release\TypePal.exe"
+          $deps
+          $extra = $deps | Select-String -Pattern "vcruntime|msvcp|api-ms-win-crt|ucrtbase"
+          if ($extra) { throw "still needs: $extra" }
 
       - uses: actions/setup-node@v7
         with:
