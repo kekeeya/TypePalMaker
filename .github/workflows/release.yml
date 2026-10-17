@@ -15,8 +15,13 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
-  windows:
+  # The Windows pet's own tests, and its template launched, as on every push.
+  windows-pet:
     needs: test
+    uses: ./.github/workflows/windows.yml
+
+  windows:
+    needs: windows-pet
     uses: ./.github/workflows/maker-windows.yml
 
   dmg:

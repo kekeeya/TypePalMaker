@@ -1,4 +1,5 @@
 import { del, get, set } from "idb-keyval";
+import { STRINGS, type Lang } from "../i18n/strings";
 import type { GenerateResult, Platform } from "./types";
 
 const PREFIX = "typepal-maker:";
@@ -55,31 +56,27 @@ export const webPlatform: Platform = {
         const { buildApp, loadTemplate } = await import("../model/appBuild/buildApp");
         parts = { buildApp, template: await loadTemplate(`${import.meta.env.BASE_URL}template/`) };
       } catch {
-        const message = lang === "zh" ? "网络异常，请检查网络或刷新页面后重试。" : "Network error. Check your connection or reload the page, then try again.";
-        return { ok: false, reason: "error", message };
+        return { ok: false, reason: "error", message: STRINGS[lang].networkError };
       }
       const built = await parts.buildApp(bytes, parts.template);
       const fileName = `${built.appName.replace(/\.app$/, "")}.zip`;
       download(built.zip, fileName);
       return { ok: true, path: fileName };
     } catch (error) {
-      return { ok: false, reason: "error", message: error instanceof Error ? error.message : String(error) };
+      return failed(lang, error);
     }
   },
 };
 
-const networkError = (lang: "zh" | "en") =>
-  lang === "zh" ? "网络异常，请检查网络或刷新页面后重试。" : "Network error. Check your connection or reload the page, then try again.";
-
 /** A Windows pet, built in the page from the Windows template. */
-async function generateWindows(bytes: Uint8Array, lang: "zh" | "en"): Promise<GenerateResult> {
+async function generateWindows(bytes: Uint8Array, lang: Lang): Promise<GenerateResult> {
   try {
     let parts;
     try {
       const { buildWindowsApp, loadWindowsTemplate } = await import("../model/appBuild/buildWindows");
       parts = { buildWindowsApp, template: await loadWindowsTemplate(`${import.meta.env.BASE_URL}template/windows/`) };
     } catch {
-      return { ok: false, reason: "error", message: networkError(lang) };
+      return { ok: false, reason: "error", message: STRINGS[lang].networkError };
     }
     const built = await parts.buildWindowsApp(bytes, parts.template);
     // Told apart from the Mac download of the same pet.
@@ -87,8 +84,14 @@ async function generateWindows(bytes: Uint8Array, lang: "zh" | "en"): Promise<Ge
     download(built.zip, fileName);
     return { ok: true, path: fileName };
   } catch (error) {
-    return { ok: false, reason: "error", message: error instanceof Error ? error.message : String(error) };
+    return failed(lang, error);
   }
+}
+
+/** A builder's error, in words the user can read, with the detail kept. */
+function failed(lang: Lang, error: unknown): GenerateResult {
+  const detail = error instanceof Error ? error.message : String(error);
+  return { ok: false, reason: "error", message: STRINGS[lang].generateError(detail) };
 }
 
 /** Hands bytes to the browser as a file download. */

@@ -1,6 +1,7 @@
-// Copies the signed TypePal runtime template into the web Maker's static
-// files, so the browser can build pet apps from it (src/model/appBuild).
-// The template is a build product of player/build-app.sh — never committed.
+// Copies the pet templates into the Maker's static files, so the page can
+// build pets from them (src/model/appBuild): the signed Mac runtime from
+// player/build-app.sh, and the Windows runtime from player-windows
+// (cargo build --release). Both are build products, never committed.
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -33,10 +33,12 @@ export interface Platform {
    *  chosen (first time: ~/Applications); null if the user cancels. Absent
    *  on the web, where the browser downloads the app instead. */
   chooseOutputDir?(title: string): Promise<string | null>;
-  /** Builds the pet app: on the desktop into `outDir`, signed by `codesign`;
-   *  on the web in the browser, downloaded as a zip (`outDir` unused, and the
-   *  result's path is the zip's file name). `lang` is the interface
-   *  language, for the error messages. */
+  /** Builds the pet. The Mac desktop Maker builds it into `outDir` and signs
+   *  it with `codesign`; the Windows one builds it in the page and saves it
+   *  to `outDir`; the web builds it in the browser and downloads a zip
+   *  (`outDir` unused, the result's path is the zip's file name; `target`
+   *  says which system's pet). `lang` is the interface language, for the
+   *  error messages. */
   generateApp?(bytes: Uint8Array, options: { overwrite: boolean; outDir: string; lang: "zh" | "en"; target?: AppTarget }): Promise<GenerateResult>;
   revealInFinder?(path: string): Promise<void>;
   openApp?(path: string): Promise<void>;

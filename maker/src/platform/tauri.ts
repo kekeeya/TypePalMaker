@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { STRINGS } from "../i18n/strings";
 import type { GenerateResult, Platform } from "./types";
 
 const windows = navigator.userAgent.includes("Windows");
@@ -105,7 +106,11 @@ export const tauriPlatform: Platform = {
       const detail = rest.join(":");
       if (code === "EXISTS") return { ok: false, reason: "exists", path: detail };
       if (code === "RUNNING") return { ok: false, reason: "running", path: detail };
-      return { ok: false, reason: "error", message: code === "ERROR" ? detail : text };
+      // The Mac generator words its own errors in both languages; anything
+      // else is wrapped so the user can read it.
+      if (code === "ERROR" && !windows) return { ok: false, reason: "error", message: detail };
+      const raw = code === "ERROR" ? detail : error instanceof Error ? error.message : text;
+      return { ok: false, reason: "error", message: STRINGS[lang].generateError(raw) };
     }
   },
 

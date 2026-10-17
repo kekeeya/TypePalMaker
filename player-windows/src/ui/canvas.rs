@@ -114,11 +114,6 @@ impl Canvas {
         self.pixmap.fill_path(path, &color.paint(), FillRule::Winding, t, None);
     }
 
-    pub fn fill_path_even_odd(&mut self, path: &Path, color: Color) {
-        let t = self.transform();
-        self.pixmap.fill_path(path, &color.paint(), FillRule::EvenOdd, t, None);
-    }
-
     pub fn stroke_path(&mut self, path: &Path, width: f32, color: Color) {
         let t = self.transform();
         let stroke = Stroke { width, line_cap: tiny_skia::LineCap::Round, line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
@@ -183,7 +178,6 @@ impl Canvas {
         let mut pen = x * self.scale;
         let base = baseline * self.scale;
         let mut prev: Option<char> = None;
-        let emboldened = weight == Weight::Medium && fonts.medium_is_faux;
         for ch in s.chars() {
             if let Some(p) = prev {
                 pen += font.horizontal_kern(p, ch, px).unwrap_or(0.0);
@@ -192,11 +186,6 @@ impl Canvas {
             let left = (pen + glyph.xmin as f32).round() as i32;
             let top = (base - glyph.ymin as f32 - glyph.height as f32).round() as i32;
             self.blend_coverage(&glyph.coverage, glyph.width, glyph.height, left, top, color);
-            if emboldened {
-                // Weights between the font's regular and bold, drawn as a
-                // slightly thickened regular.
-                self.blend_coverage(&glyph.coverage, glyph.width, glyph.height, left + 1, top, color.with_alpha(0.45));
-            }
             pen += glyph.advance;
             prev = Some(ch);
         }
@@ -309,7 +298,6 @@ struct Glyph {
 pub struct Fonts {
     regular: fontdue::Font,
     bold: fontdue::Font,
-    medium_is_faux: bool,
     cache: std::sync::Mutex<HashMap<(Weight, char, u32), std::sync::Arc<Glyph>>>,
 }
 
@@ -368,7 +356,7 @@ pub fn fonts() -> &'static Fonts {
         ];
         let regular = load_first(&regular).expect("no interface font found");
         let bold = load_first(&bold).unwrap_or_else(|| regular.clone());
-        Fonts { regular, bold, medium_is_faux: false, cache: Default::default() }
+        Fonts { regular, bold, cache: Default::default() }
     })
 }
 

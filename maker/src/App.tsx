@@ -228,7 +228,7 @@ export function App() {
         releaseBaked(ready);
         result = await platform.generateApp(bytes, { overwrite, outDir, lang: useEditor.getState().lang, target });
       } catch (e) {
-        result = { ok: false, reason: "error", message: String(e) };
+        result = { ok: false, reason: "error", message: t.generateError(e instanceof Error ? e.message : String(e)) };
       } finally {
         generating.current = false;
         setBusy(null);

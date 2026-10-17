@@ -6,7 +6,7 @@ name: Windows Maker
 
 on:
   push:
-    branches: [main, "dev_windows*"]
+    branches: [main, "dev_*"]
     paths: ["maker/**", "player-windows/**", ".github/workflows/maker-windows.yml"]
   workflow_dispatch:
   workflow_call:

@@ -6,7 +6,7 @@ name: Windows
 
 on:
   push:
-    branches: [main, "dev_windows*"]
+    branches: [main, "dev_*"]
     paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
   pull_request:
     paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
@@ -21,9 +21,6 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v7
-
-      - name: Fonts the interface can use
-        run: Get-ChildItem "$env:WINDIR\Fonts" -Include msyh*, simsun*, segoeui* -Recurse | Format-Table Name, Length
 
       - name: Tests
         working-directory: player-windows

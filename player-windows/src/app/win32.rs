@@ -56,6 +56,16 @@ pub fn dpi_scale(hwnd: HWND) -> f32 {
     if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
 }
 
+/// The scale of the monitor a window is on now. Read directly, because the
+/// WM_DPICHANGED that a move sends can arrive while the app is busy with the
+/// move itself, and be passed over.
+pub fn monitor_scale(hwnd: HWND) -> f32 {
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    let (mut x, mut y) = (0u32, 0u32);
+    let ok = unsafe { GetDpiForMonitor(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &mut x, &mut y) };
+    if ok != 0 || y == 0 { dpi_scale(hwnd) } else { y as f32 / 96.0 }
+}
+
 pub fn loword(v: usize) -> u16 {
     (v & 0xffff) as u16
 }

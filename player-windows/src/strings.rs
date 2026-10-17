@@ -76,7 +76,6 @@ pub fn hide_pet() -> String { pick("隐藏桌宠", "Hide Pet") }
 pub fn show_pet() -> String { pick("显示桌宠", "Show Pet") }
 pub fn settings_ellipsis() -> String { pick("设置…", "Settings…") }
 pub fn quit(name: &str) -> String { pick(&format!("退出 {name}"), &format!("Quit {name}")) }
-pub fn close() -> String { pick("关闭", "Close") }
 
 // Settings
 

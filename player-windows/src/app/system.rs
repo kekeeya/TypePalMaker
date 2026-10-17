@@ -96,7 +96,7 @@ pub fn set_launch_at_login(pet_id: &str, on: bool) -> Result<(), String> {
         let mut key: HKEY = null_mut();
         let status = RegCreateKeyExW(HKEY_CURRENT_USER, k.as_ptr(), 0, null(), 0, KEY_SET_VALUE, null(), &mut key, null_mut());
         if status != ERROR_SUCCESS {
-            return Err(format!("{status}"));
+            return Err(system_message(status));
         }
         let status = if on {
             let command = wide(&format!("\"{}\"", exe_path()));
@@ -108,8 +108,30 @@ pub fn set_launch_at_login(pet_id: &str, on: bool) -> Result<(), String> {
             }
         };
         RegCloseKey(key);
-        if status == ERROR_SUCCESS { Ok(()) } else { Err(format!("{status}")) }
+        if status == ERROR_SUCCESS { Ok(()) } else { Err(system_message(status)) }
     }
+}
+
+/// Windows' own wording for an error code, in the system's language
+/// ("Access is denied."), rather than the bare number.
+fn system_message(code: u32) -> String {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS, FormatMessageW,
+    };
+    let mut buf = [0u16; 512];
+    let n = unsafe {
+        FormatMessageW(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            null(),
+            code,
+            0,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            null(),
+        )
+    };
+    let text = String::from_utf16_lossy(&buf[..n as usize]).trim().to_string();
+    if text.is_empty() { format!("{code}") } else { text }
 }
 
 // MARK: Full screen

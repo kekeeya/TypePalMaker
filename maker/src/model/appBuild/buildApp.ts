@@ -1,5 +1,6 @@
-import { strFromU8, strToU8, unzipSync, zipSync, type ZipOptions } from "fflate";
+import { strFromU8, strToU8, zipSync, type ZipOptions } from "fflate";
 import { makeIcns } from "./icns";
+import { fitHeight, readPet } from "./pet";
 import { patchSpecialSlots } from "./macho";
 import { editInfoPlist, fillCodeResources, type SealedFile } from "./plist";
 
@@ -32,12 +33,6 @@ export async function loadTemplate(base: string): Promise<Template> {
   return { infoPlist: strFromU8(info), codeResources: strFromU8(seal), executable };
 }
 
-/** The pet may be shown at up to 2× its designed height, on a Retina screen:
- *  frames are kept no taller than that — as the desktop generator does. */
-export const MAX_SCALE = 2;
-export const RETINA = 2;
-export const STATES = ["idle", "typing", "mouseClick", "tap", "pet"] as const;
-
 /** Finder-safe file name, as `generator::file_safe`. */
 export function fileSafe(name: string): string {
   const cleaned = name.replace(/[/:]/g, "-").replace(/^\.+/, "").trim();
@@ -61,47 +56,18 @@ const browserImages: ImageOps = { makeIcns, fitHeight };
 
 /** `projectZip` is a baked project, as the desktop generator receives it. */
 export async function buildApp(projectZip: Uint8Array, template: Template, images: ImageOps = browserImages): Promise<BuiltApp> {
-  const files = unzipSync(projectZip);
-  const manifest = JSON.parse(strFromU8(files["manifest.json"])) as {
-    name: string;
-    id: string;
-    display: { height: number };
-    frames: Record<string, { file: string }>;
-    states: Record<string, { enabled: boolean; frames: (string | { id: string })[] }>;
-  };
-  const name = manifest.name.trim();
-  if (!name) throw new Error("no-name");
-  if (!/^[a-z0-9-]{1,40}$/.test(manifest.id)) throw new Error("bad-id");
-
-  // Only frames a playing state uses, as the desktop generator writes them.
-  const used = new Set<string>();
-  for (const state of STATES) {
-    const spec = manifest.states[state];
-    if (!spec?.enabled || !spec.frames.length) continue;
-    for (const entry of spec.frames) used.add(typeof entry === "string" ? entry : entry.id);
-  }
-  const maxPx = Math.ceil((manifest.display?.height ?? 160) * MAX_SCALE * RETINA);
+  const pet = await readPet(projectZip, images.fitHeight);
+  const name = pet.name;
   const resources: Record<string, Uint8Array> = {};
-  const frames: Record<string, { file: string }> = {};
-  for (const id of used) {
-    const source = files[manifest.frames[id]?.file];
-    if (!source) throw new Error(`missing frame ${id}`);
-    const file = `frames/${id}.png`;
-    resources[`Pet/${file}`] = await images.fitHeight(source, maxPx);
-    frames[id] = { file };
-  }
-  resources["Pet/manifest.json"] = strToU8(JSON.stringify({ ...manifest, frames }, null, 2));
-
-  const icon = files["icon.png"];
-  if (!icon) throw new Error("missing icon");
-  resources["AppIcon.icns"] = await images.makeIcns(icon);
+  for (const [path, data] of Object.entries(pet.files)) resources[`Pet/${path}`] = data;
+  resources["AppIcon.icns"] = await images.makeIcns(pet.icon);
 
   // Info.plist and the resource seal, then the executable bound to both.
   const infoPlist = strToU8(
     editInfoPlist(template.infoPlist, {
       CFBundleName: name,
       CFBundleDisplayName: name,
-      CFBundleIdentifier: `io.typepal.pet.${manifest.id}`,
+      CFBundleIdentifier: `io.typepal.pet.${pet.id}`,
       CFBundleIconFile: "AppIcon",
     }),
   );
@@ -135,23 +101,4 @@ async function digest(algorithm: "SHA-1" | "SHA-256", data: Uint8Array): Promise
 /** PNGs are compressed already; deflating them again only costs time. */
 function isCompressed(data: Uint8Array) {
   return data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47;
-}
-
-/** Scales a frame down so its height is at most `maxPx`; never up. */
-export async function fitHeight(png: Uint8Array, maxPx: number): Promise<Uint8Array> {
-  const image = await createImageBitmap(new Blob([png as BlobPart], { type: "image/png" }));
-  try {
-    if (image.height <= maxPx) return png;
-    const canvas = document.createElement("canvas");
-    canvas.height = maxPx;
-    canvas.width = Math.max(1, Math.round((image.width * maxPx) / image.height));
-    const ctx = canvas.getContext("2d")!;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("frame encode failed");
-    return new Uint8Array(await blob.arrayBuffer());
-  } finally {
-    image.close();
-  }
 }

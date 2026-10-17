@@ -91,25 +91,37 @@ pub fn refresh(app: &mut App) {
 }
 
 /// Sizes the window to the form; first placed centred on the pet's screen.
+/// Placed on a monitor scaled differently from where it was, it is sized
+/// again for that one.
 fn place(app: &mut App, first: bool) {
-    let Some(s) = app.settings.as_ref() else { return };
+    let pet = RECT { left: app.pos.0, top: app.pos.1, right: app.pos.0 + app.size.0, bottom: app.pos.1 + app.size.1 };
+    let Some(s) = app.settings.as_mut() else { return };
     let (style, ex) = style();
-    let w = (WIDTH * s.scale).ceil() as i32;
-    let h = (s.view.height() * s.scale).ceil() as i32;
-    let mut r = RECT { left: 0, top: 0, right: w, bottom: h };
-    unsafe { AdjustWindowRectExForDpi(&mut r, style, 0, ex, (s.scale * 96.0) as u32) };
-    let (ow, oh) = (r.right - r.left, r.bottom - r.top);
-    let (x, y) = if first {
-        LAST_POS.get().unwrap_or_else(|| {
-            let pet = RECT { left: app.pos.0, top: app.pos.1, right: app.pos.0 + app.size.0, bottom: app.pos.1 + app.size.1 };
-            let work = work_area_near(&pet);
-            ((work.left + work.right - ow) / 2, (work.top + work.bottom - oh) / 2)
-        })
-    } else {
-        let cur = window_rect(s.hwnd);
-        (cur.left, cur.top)
-    };
-    unsafe { SetWindowPos(s.hwnd, HWND_TOPMOST, x, y, ow, oh, SWP_NOACTIVATE) };
+    let mut origin: Option<(i32, i32)> = None;
+    for _ in 0..2 {
+        let w = (WIDTH * s.scale).ceil() as i32;
+        let h = (s.view.height() * s.scale).ceil() as i32;
+        let mut r = RECT { left: 0, top: 0, right: w, bottom: h };
+        unsafe { AdjustWindowRectExForDpi(&mut r, style, 0, ex, (s.scale * 96.0) as u32) };
+        let (ow, oh) = (r.right - r.left, r.bottom - r.top);
+        let (x, y) = *origin.get_or_insert_with(|| {
+            if first {
+                LAST_POS.get().unwrap_or_else(|| {
+                    let work = work_area_near(&pet);
+                    ((work.left + work.right - ow) / 2, (work.top + work.bottom - oh) / 2)
+                })
+            } else {
+                let cur = window_rect(s.hwnd);
+                (cur.left, cur.top)
+            }
+        });
+        unsafe { SetWindowPos(s.hwnd, HWND_TOPMOST, x, y, ow, oh, SWP_NOACTIVATE) };
+        let scale = monitor_scale(s.hwnd);
+        if (scale - s.scale).abs() < 0.001 {
+            break;
+        }
+        s.scale = scale;
+    }
 }
 
 fn render(app: &mut App) {
@@ -173,7 +185,7 @@ fn act(app: &mut App, target: Target) {
         }
         Target::ClickThrough => app.set_click_through(!app.prefs.click_through),
         Target::LaunchAtLogin => {
-            let wanted = system::login_status(&app.manifest.id) == system::LoginStatus::Off;
+            let wanted = system::login_status(&app.manifest.id) != system::LoginStatus::On;
             let result = system::set_launch_at_login(&app.manifest.id, wanted);
             if let Some(s) = app.settings.as_mut() {
                 // Read back rather than assumed when the form is rebuilt.

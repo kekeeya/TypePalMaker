@@ -15,7 +15,7 @@
 
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { Data, NtExecutable, NtExecutableResource, Resource } from "resedit";
-import { MAX_SCALE, RETINA, STATES, fitHeight } from "./buildApp";
+import { fitHeight, readPet } from "./pet";
 
 export const PAYLOAD_MAGIC = "TYPEPAL1";
 
@@ -63,42 +63,11 @@ export async function buildWindowsApp(
   template: Uint8Array,
   images: WindowsImageOps = browserImages,
 ): Promise<BuiltWindowsApp> {
-  const files = unzipSync(projectZip);
-  const manifest = JSON.parse(strFromU8(files["manifest.json"])) as {
-    name: string;
-    id: string;
-    display: { height: number };
-    frames: Record<string, { file: string }>;
-    states: Record<string, { enabled: boolean; frames: (string | { id: string })[] }>;
-  };
-  const name = manifest.name.trim();
-  if (!name) throw new Error("no-name");
-  if (!/^[a-z0-9-]{1,40}$/.test(manifest.id)) throw new Error("bad-id");
-
-  // Only frames a playing state uses, scaled as the Mac generators do.
-  const used = new Set<string>();
-  for (const state of STATES) {
-    const spec = manifest.states[state];
-    if (!spec?.enabled || !spec.frames.length) continue;
-    for (const entry of spec.frames) used.add(typeof entry === "string" ? entry : entry.id);
-  }
-  const maxPx = Math.ceil((manifest.display?.height ?? 160) * MAX_SCALE * RETINA);
-  const pet: Record<string, [Uint8Array, { level: 0 }]> = {};
-  const frames: Record<string, { file: string }> = {};
-  for (const id of used) {
-    const source = files[manifest.frames[id]?.file];
-    if (!source) throw new Error(`missing frame ${id}`);
-    const file = `frames/${id}.png`;
-    pet[file] = [await images.fitHeight(source, maxPx), { level: 0 }];
-    frames[id] = { file };
-  }
-  pet["manifest.json"] = [strToU8(JSON.stringify({ ...manifest, frames }, null, 2)), { level: 0 }];
+  const pet = await readPet(projectZip, images.fitHeight);
+  const name = pet.name;
   // Stored, not deflated: the runtime reads entries straight from the file.
-  const payload = zipSync(pet);
-
-  const icon = files["icon.png"];
-  if (!icon) throw new Error("missing icon");
-  const icons = await Promise.all(ICON_SIZES.map(async (size) => [size, await images.iconPng(icon, size)] as const));
+  const payload = zipSync(Object.fromEntries(Object.entries(pet.files).map(([path, data]) => [path, [data, { level: 0 }]])));
+  const icons = await Promise.all(ICON_SIZES.map(async (size) => [size, await images.iconPng(pet.icon, size)] as const));
 
   const exeName = `${windowsFileSafe(name)}.exe`;
   const named = editResources(template, name, exeName, icons);

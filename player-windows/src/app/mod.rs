@@ -293,6 +293,8 @@ impl App {
         self.scale = dpi_scale(self.pet);
         self.configure_size();
         self.restore_position();
+        // The saved place may be on a monitor scaled differently.
+        self.sync_scale();
         self.apply_always_on_top();
         self.apply_click_through();
         self.apply_icon_mode();
@@ -730,8 +732,9 @@ impl App {
         self.save_prefs();
     }
 
-    fn on_dpi_changed(&mut self) {
-        let scale = dpi_scale(self.pet);
+    /// Resizes for the monitor the pet is on, if its scale differs.
+    fn sync_scale(&mut self) {
+        let scale = monitor_scale(self.pet);
         if (scale - self.scale).abs() > 0.001 {
             self.scale = scale;
             self.resize();
@@ -791,6 +794,8 @@ impl App {
             self.clamp_to_screen();
             self.render();
             self.save_position();
+            // Dropped on another monitor, perhaps one scaled differently.
+            self.sync_scale();
             self.apply_always_on_top();
         } else if !drag.moved_past_threshold {
             let now = self.now();
@@ -848,7 +853,9 @@ impl App {
             always_on_top: self.prefs.always_on_top,
             lock_position: self.prefs.lock_position,
             click_through: self.prefs.click_through,
-            launch_at_login: status != system::LoginStatus::Off,
+            // Switched off in Windows' Startup apps reads as off, with a note
+            // saying where to turn it on, as macOS shows "requires approval".
+            launch_at_login: status == system::LoginStatus::On,
             login_notes: notes,
             use_tray: self.prefs.use_tray_icon,
             language: strings::language(),
@@ -960,7 +967,7 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             }
             WM_DISPLAYCHANGE => {
                 with_app(|app| {
-                    app.on_dpi_changed();
+                    app.sync_scale();
                     app.clamp_to_screen();
                     app.render();
                 });
@@ -1040,7 +1047,7 @@ unsafe extern "system" fn pet_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
                 return 0;
             }
             WM_DPICHANGED => {
-                with_app(|app| app.on_dpi_changed());
+                with_app(|app| app.sync_scale());
                 return 0;
             }
             _ => {}

@@ -81,7 +81,7 @@ impl Popup {
         if hwnd.is_null() {
             return None;
         }
-        let scale = dpi_scale(hwnd);
+        let scale = monitor_scale(hwnd);
         let (bw, bh) = body_size(kind);
         let body = ((bw * scale).round() as i32, (bh * scale).round() as i32);
         let (bx, by) = place(scale, body);
