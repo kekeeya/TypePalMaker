@@ -108,6 +108,14 @@ impl FrameStore {
         Some(decoded)
     }
 
+    /// Lets go of every frame but idle's, which keeps playing; the rest are
+    /// decoded again when a reaction next needs them.
+    pub fn release_unpinned(&mut self) {
+        let pinned = &self.pinned;
+        self.cache.retain(|id, _| pinned.contains(id));
+        self.recency.retain(|id| pinned.contains(id));
+    }
+
     pub fn cached_bytes(&self) -> usize {
         self.cache.values().map(|f| f.bitmap.data.len()).sum()
     }

@@ -46,6 +46,17 @@ fn the_mascot_packs_reads_back_and_decodes() {
     // Idle's frames are kept; the cache stays within its budget.
     assert!(store.cached_bytes() <= 24 * 1024 * 1024);
 
+    // Housekeeping lets go of the others; idle's stay, and the rest come back
+    // when asked for.
+    let idle: Vec<String> = manifest.playable(PetState::Idle).unwrap().frames.iter().map(|f| f.id.clone()).collect();
+    let all = store.cached_bytes();
+    store.release_unpinned();
+    assert!(store.cached_bytes() < all);
+    let typing = &manifest.playable(PetState::Typing).unwrap().frames[0].id;
+    if !idle.contains(typing) {
+        assert!(store.frame(typing, &source).is_some());
+    }
+
     let behavior = PetBehavior::new(&manifest);
     assert_eq!(behavior.current, PetState::Idle);
     std::fs::remove_dir_all(&dir).unwrap();

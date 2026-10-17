@@ -43,6 +43,13 @@ const TIMER_FRAME: usize = 1;
 const TIMER_STROKE: usize = 2;
 const TIMER_KEYS: usize = 3;
 const TIMER_FULL_SCREEN: usize = 4;
+/// Memory is handed back a second after a burst of work (resizing, closing
+/// the settings), once rather than at every step.
+const TIMER_TRIM: usize = 5;
+/// Every half hour, what is not needed right now is let go.
+const TIMER_HOUSEKEEPING: usize = 6;
+/// A minute after the pet stops being seen, it gives back all it can.
+const TIMER_REST: usize = 7;
 
 /// How often to look at the keyboard. What is read is a timestamp, so polling
 /// only adds latency to noticing, never error to when (as on macOS).
@@ -116,6 +123,9 @@ pub struct App {
     /// Closing a window hands activation back to the invisible host; that is
     /// not a click on the taskbar button.
     ignore_activation_until: f64,
+    /// Nobody can see the pet: the session is locked, or the display is off.
+    locked: bool,
+    display_off: bool,
 
     settings: Option<settings_window::SettingsWindow>,
     menu: Option<popup::Popup>,
@@ -246,6 +256,8 @@ pub fn run() {
         tray_icon: app_icon(unsafe { GetSystemMetrics(SM_CXSMICON) }),
         taskbar_created,
         ignore_activation_until: 0.0,
+        locked: false,
+        display_off: false,
         settings: None,
         menu: None,
         dropdown: None,
@@ -301,7 +313,20 @@ impl App {
         self.apply_always_on_top();
         self.apply_click_through();
         self.apply_icon_mode();
-        unsafe { SetTimer(self.host, TIMER_FULL_SCREEN, 1000, None) };
+        unsafe {
+            SetTimer(self.host, TIMER_FULL_SCREEN, 1000, None);
+            SetTimer(self.host, TIMER_HOUSEKEEPING, housekeeping_ms(), None);
+            // Told when the session locks and when the display turns off.
+            windows_sys::Win32::System::RemoteDesktop::WTSRegisterSessionNotification(
+                self.host,
+                windows_sys::Win32::System::RemoteDesktop::NOTIFY_FOR_THIS_SESSION,
+            );
+            windows_sys::Win32::System::Power::RegisterPowerSettingNotification(
+                self.host as _,
+                &windows_sys::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE,
+                DEVICE_NOTIFY_WINDOW_HANDLE,
+            );
+        }
         self.refresh();
         self.update_visibility();
     }
@@ -332,20 +357,55 @@ impl App {
         self.update_activity();
     }
 
-    /// Animation and input run only while the pet can be seen.
+    /// Animation and input run only while the pet can be seen: not hidden,
+    /// not under a full-screen app, not behind a locked session or a display
+    /// that is off.
     fn update_activity(&mut self) {
-        let active = self.is_shown();
+        let active = self.is_shown() && !self.locked && !self.display_off;
         if active == self.input_active && active != self.animation.paused {
             return;
         }
         if active {
+            unsafe { KillTimer(self.host, TIMER_REST) };
             self.start_input();
             self.animation.paused = false;
             self.show_frame();
         } else {
             self.stop_input();
             self.animation.paused = true;
-            unsafe { KillTimer(self.pet, TIMER_FRAME) };
+            unsafe {
+                KillTimer(self.pet, TIMER_FRAME);
+                SetTimer(self.host, TIMER_REST, 60_000, None);
+            }
+        }
+    }
+
+    // MARK: Memory
+
+    /// Hands freed memory back to Windows a second from now, so a burst of
+    /// work (every notch of a resize) is followed by one trim, not many.
+    fn trim_soon(&self) {
+        unsafe { SetTimer(self.host, TIMER_TRIM, 1000, None) };
+    }
+
+    /// Lets go of what is not needed right now: frames other than idle's, and
+    /// the drawn glyphs while no window shows text. With `resting` (the pet
+    /// cannot be seen), the working set is emptied too; nothing touches it
+    /// until the pet is back.
+    fn release(&mut self, resting: bool) {
+        self.store.release_unpinned();
+        if self.settings.is_none() && self.menu.is_none() && self.dropdown.is_none() && self.policy.is_none() {
+            crate::ui::canvas::release_glyphs();
+        }
+        trim_heap();
+        if resting {
+            unsafe {
+                windows_sys::Win32::System::Threading::SetProcessWorkingSetSize(
+                    windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                    usize::MAX,
+                    usize::MAX,
+                );
+            }
         }
     }
 
@@ -377,6 +437,8 @@ impl App {
         self.prefs.scale = scale;
         self.save_prefs();
         self.resize();
+        // Every notch decodes every frame again; the old ones are freed.
+        self.trim_soon();
     }
 
     fn set_always_on_top(&mut self, on: bool) {
@@ -903,6 +965,18 @@ impl App {
     }
 }
 
+/// Coalesces the heap's free blocks and gives the large ones back to Windows
+/// (the counterpart of the Mac pet's `MemoryTrim`).
+fn trim_heap() {
+    use windows_sys::Win32::System::Memory::{GetProcessHeap, HeapCompact};
+    unsafe { HeapCompact(GetProcessHeap(), 0) };
+}
+
+/// Half an hour; `TYPEPAL_HOUSEKEEPING_SECS` shortens it for tests.
+fn housekeeping_ms() -> u32 {
+    std::env::var("TYPEPAL_HOUSEKEEPING_SECS").ok().and_then(|s| s.parse::<u32>().ok()).map_or(30 * 60 * 1000, |s| s.max(1) * 1000)
+}
+
 fn last_input_tick() -> u32 {
     let mut info = LASTINPUTINFO { cbSize: size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
     unsafe { GetLastInputInfo(&mut info) };
@@ -924,6 +998,21 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     }
                     TIMER_FULL_SCREEN => {
                         with_app(|app| app.check_full_screen());
+                    }
+                    TIMER_TRIM => {
+                        KillTimer(hwnd, TIMER_TRIM);
+                        trim_heap();
+                    }
+                    TIMER_HOUSEKEEPING => {
+                        with_app(|app| app.release(!app.input_active));
+                    }
+                    TIMER_REST => {
+                        KillTimer(hwnd, TIMER_REST);
+                        with_app(|app| {
+                            if !app.input_active {
+                                app.release(true);
+                            }
+                        });
                     }
                     _ => {}
                 }
@@ -975,7 +1064,38 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     app.render();
                 });
             }
+            WM_WTSSESSION_CHANGE => {
+                let locked = match wparam as u32 {
+                    WTS_SESSION_LOCK => Some(true),
+                    WTS_SESSION_UNLOCK => Some(false),
+                    _ => None,
+                };
+                if let Some(locked) = locked {
+                    with_app(|app| {
+                        app.locked = locked;
+                        app.update_activity();
+                    });
+                }
+                return 0;
+            }
             WM_POWERBROADCAST => {
+                if wparam as u32 == PBT_POWERSETTINGCHANGE {
+                    let setting = &*(lparam as *const windows_sys::Win32::System::Power::POWERBROADCAST_SETTING);
+                    let display = windows_sys::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+                    let same = setting.PowerSetting.data1 == display.data1
+                        && setting.PowerSetting.data2 == display.data2
+                        && setting.PowerSetting.data3 == display.data3
+                        && setting.PowerSetting.data4 == display.data4;
+                    if same && setting.DataLength >= 1 {
+                        // 0 off, 1 on, 2 dimmed (still seen).
+                        let off = setting.Data[0] == 0;
+                        with_app(|app| {
+                            app.display_off = off;
+                            app.update_activity();
+                        });
+                    }
+                    return 1;
+                }
                 with_app(|app| app.update_visibility());
             }
             _ => {

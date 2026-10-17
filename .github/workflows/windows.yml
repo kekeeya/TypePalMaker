@@ -125,6 +125,9 @@ jobs:
             [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
             [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
             [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+            [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+            [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd, ref POINT p);
             public delegate bool EnumProc(IntPtr hwnd, IntPtr l);
             [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
             [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
@@ -142,6 +145,8 @@ jobs:
           }
           "@
           $exe = "$env:RUNNER_TEMP\out\TypePal 小团子.exe"
+          # Housekeeping every 20 s instead of every 30 min, so it runs here.
+          $env:TYPEPAL_HOUSEKEEPING_SECS = "20"
           $pet = Start-Process $exe -PassThru
           Start-Sleep 5
           function Sample($when) {
@@ -174,10 +179,24 @@ jobs:
               "pet windows: $([W]::Windows([uint32]$pet.Id))"
               throw "round $($i + 1): the settings window did not open"
             }
+            if ($i -eq 9) {
+              # The size slider dragged end to end and back (track 253–463 pt
+              # across, at y 113 pt, in the form), every notch resizing the pet.
+              $origin = New-Object W+POINT
+              [void][W]::ClientToScreen($settings, [ref]$origin)
+              foreach ($x in @(253..463 + 463..253 + 253..326)) {
+                if ($x % 7 -ne 0 -and $x -ne 253 -and $x -ne 463 -and $x -ne 326) { continue }
+                [void][W]::SetCursorPos($origin.X + $x, $origin.Y + 113)
+                if ($x -eq 253 -and -not $down) { [W]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); $down = $true }
+                Start-Sleep -Milliseconds 15
+              }
+              [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep 2
+            }
             [void][W]::PostMessage($settings, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
             Start-Sleep 1
           }
-          $settings = Sample "settings opened and closed 10 times"
+          $settings = Sample "settings x10, size dragged"
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
           $end = (Get-Date).AddSeconds(60)
           $n = 0

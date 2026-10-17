@@ -333,6 +333,8 @@ unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LP
                         p.destroy();
                     }
                     app.settings = None;
+                    // What the window drew is freed; hand it back.
+                    app.trim_soon();
                 });
                 BITMAP.with(|b| *b.borrow_mut() = None);
                 return 0;

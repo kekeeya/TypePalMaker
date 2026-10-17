@@ -360,8 +360,16 @@ impl Fonts {
 /// (Apple's fonts may not be used there). Elsewhere, for previews, a similar
 /// sans; `TYPEPAL_FONT_REGULAR` / `TYPEPAL_FONT_BOLD` (`path` or
 /// `path#index`) override.
+static FONTS: OnceLock<Fonts> = OnceLock::new();
+
+/// Forgets the glyphs drawn so far, while no window needs them.
+pub fn release_glyphs() {
+    if let Some(fonts) = FONTS.get() {
+        fonts.cache.lock().unwrap().clear();
+    }
+}
+
 pub fn fonts() -> &'static Fonts {
-    static FONTS: OnceLock<Fonts> = OnceLock::new();
     FONTS.get_or_init(|| {
         let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
         let regular = [
