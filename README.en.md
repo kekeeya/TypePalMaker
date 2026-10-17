@@ -42,11 +42,15 @@
 
 ## Usage
 
-1. Open the Maker (web or desktop), upload your pictures, make your pet and click **Generate App**.
-2. The web Maker downloads a zip: unzip it and drag your pet into the Applications folder. The desktop Maker saves the app straight to a folder you choose.
-3. Double-click to open. The first time, macOS blocks a pet downloaded from the web: click **Done**, open **System Settings › Privacy & Security**, find "… was blocked" near the bottom and click **Open Anyway**. After that, it opens like any other app.
+1. Open the Maker (web or desktop), upload your pictures and make your pet. On the web, click **Make Mac Pet** or **Make Windows Pet**; in the desktop Maker, click **Make Pet**: the Mac version makes Mac pets, the Windows version Windows pets.
+2. The web Maker downloads a zip: for a Mac pet, unzip it and drag the app into your Applications folder; for a Windows pet, unzip it and put the exe in any folder. The desktop Maker saves your pet straight to a folder you choose.
+3. Double-click to open. The first time, the system blocks a pet downloaded from the web:
+   - Mac: click **Done**, open **System Settings › Privacy & Security**, find "… was blocked" near the bottom and click **Open Anyway**.
+   - Windows: click **More info**, then **Run anyway**. If your browser says the file isn't safe, choose **Keep** in its downloads list.
 
-The desktop TypePal Maker also needs one **Open Anyway** in Privacy & Security the first time you open it.
+   After that, it opens like any other app.
+
+The desktop TypePal Maker also needs to be allowed once the first time you open it (**Open Anyway** in Privacy & Security on a Mac, **More info › Run anyway** on Windows). On Windows, just unzip it and run it; there's nothing to install.
 
 ## Build From Source
 
@@ -59,6 +63,15 @@ npm run dev                    # web Maker, local preview
 npm run tauri build            # desktop TypePalMaker.app
 ```
 
+Developing on Windows doesn't use `player/build-app.sh` (it builds the Mac pet template, on a Mac only). You'll need Node.js, Rust and the Visual Studio Build Tools (with "Desktop development with C++"):
+
+```bash
+cd player-windows && cargo build --release      # build the Windows pet template first
+cd ../maker && npm install
+npm run dev                    # web Maker, local preview (makes Windows pets only)
+npm run tauri build            # desktop src-tauri/target/release/typepal-maker.exe
+```
+
 ## Notes
 
-Your pets and the Maker run entirely on your own computer. Your pictures and projects are never uploaded to any server (see the privacy policy in the Maker). The apps aren't notarized by Apple, so macOS asks you to allow them by hand the first time. The code is open source under [GPL-3.0](LICENSE).
+Your pets and the Maker run entirely on your own computer. Your pictures and projects are never uploaded to any server (see the privacy policy in the Maker). The Mac apps aren't notarized by Apple and the Windows programs aren't code-signed, so the system asks you to allow them by hand the first time. The code is open source under [GPL-3.0](LICENSE).

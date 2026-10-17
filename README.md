@@ -42,11 +42,15 @@
 
 ## 使用方法
 
-1. 打开网页版或本地版制作器，上传图片，定制你自己的桌宠，点「生成 App」。
-2. 网页版会下载 zip，解压后把桌宠 App 拖进「应用程序」文件夹；本地版直接保存桌宠 App 到你选择的位置。
-3. 双击打开。网页版下载的桌宠第一次打开会被 macOS 拦下：先点「完成」，再打开「系统设置 → 隐私与安全性」，在页面下方看到「已阻止使用…」后点「仍要打开」。之后就能正常双击打开了。
+1. 打开网页版或本地版制作器，上传图片，定制你自己的桌宠。网页版点「生成Mac桌宠」或「生成Windows桌宠」；本地版点「生成桌宠」，Mac 版生成 Mac 桌宠，Windows 版生成 Windows 桌宠。
+2. 网页版会下载 zip：Mac 桌宠解压后把 App 拖进「应用程序」文件夹，Windows 桌宠解压后把 exe 放到任意文件夹；本地版直接保存到你选择的位置。
+3. 双击打开。网页版下载的桌宠第一次打开会被系统拦下：
+   - Mac：先点「完成」，再打开「系统设置 → 隐私与安全性」，在页面下方看到「已阻止使用…」后点「仍要打开」。
+   - Windows：点「更多信息」，再点「仍要运行」。如果浏览器提示文件不安全，在下载列表里选择「保留」。
 
-本地版 TypePal Maker 第一次打开时同样需要在「隐私与安全性」里点一次「仍要打开」。
+   之后就能正常双击打开了。
+
+本地版 TypePal Maker 第一次打开时同样需要放行一次（Mac 在「隐私与安全性」里点「仍要打开」，Windows 点「更多信息 → 仍要运行」）。Windows 版下载 zip 解压后就能用，不需要安装。
 
 ## 从源码编译&开发
 
@@ -59,6 +63,15 @@ npm run dev                    # 网页版，本地预览
 npm run tauri build            # 本地版 TypePalMaker.app
 ```
 
+在 Windows 上开发不需要 `player/build-app.sh`（它只能在 Mac 上编译 Mac 桌宠模板），需要 Node.js、Rust 和 Visual Studio 生成工具（勾选「使用 C++ 的桌面开发」）：
+
+```bash
+cd player-windows && cargo build --release      # 先编译 Windows 桌宠模板
+cd ../maker && npm install
+npm run dev                    # 网页版，本地预览（只能生成 Windows 桌宠）
+npm run tauri build            # 本地版 src-tauri/target/release/typepal-maker.exe
+```
+
 ## 声明
 
-桌宠和 Maker 都只在你自己的电脑上运行，图片和工程不会上传到任何服务器，详见 Maker 里的隐私政策；App 没有经过 Apple 公证，所以第一次打开需要手动放行；代码以 [GPL-3.0](LICENSE) 协议开源。
+桌宠和 Maker 都只在你自己的电脑上运行，图片和工程不会上传到任何服务器，详见 Maker 里的隐私政策；Mac App 没有经过 Apple 公证、Windows 程序没有代码签名，所以第一次打开需要手动放行；代码以 [GPL-3.0](LICENSE) 协议开源。

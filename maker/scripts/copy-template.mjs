@@ -39,12 +39,14 @@ const files = {
 const missing = Object.values(files).filter((f) => !existsSync(f));
 if (missing.length) {
   console.error(`TypePal template not built — run player/build-app.sh first.\nMissing: ${missing.join(", ")}`);
-  // Editing works without it; only a build to publish must have it.
-  process.exit(process.env.npm_lifecycle_event === "predev" ? 0 : 1);
+  // Editing works without it, and so does making Windows pets (below), as
+  // when developing on Windows; only a build to publish must have it.
+  if (process.env.npm_lifecycle_event !== "predev") process.exit(1);
+} else {
+  mkdirSync(out, { recursive: true });
+  for (const [name, from] of Object.entries(files)) copyFileSync(from, join(out, name));
+  console.log(`template copied to ${out}`);
 }
-mkdirSync(out, { recursive: true });
-for (const [name, from] of Object.entries(files)) copyFileSync(from, join(out, name));
-console.log(`template copied to ${out}`);
 
 // The Windows template, built by player-windows on Windows (CI hands it to
 // the Pages build). Optional here: without it only "Generate Windows Pet"
