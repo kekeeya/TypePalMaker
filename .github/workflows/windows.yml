@@ -184,13 +184,26 @@ jobs:
               # across, at y 113 pt, in the form), every notch resizing the pet.
               $origin = New-Object W+POINT
               [void][W]::ClientToScreen($settings, [ref]$origin)
-              foreach ($x in @(253..463 + 463..253 + 253..326)) {
-                if ($x % 7 -ne 0 -and $x -ne 253 -and $x -ne 463 -and $x -ne 326) { continue }
-                [void][W]::SetCursorPos($origin.X + $x, $origin.Y + 113)
-                if ($x -eq 253 -and -not $down) { [W]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); $down = $true }
-                Start-Sleep -Milliseconds 15
+              $prefs = "$env:APPDATA\TypePal\typepal-mascot\settings.json"
+              function Drag($from, $to) {
+                [void][W]::SetCursorPos($origin.X + $from, $origin.Y + 113)
+                Start-Sleep -Milliseconds 100
+                [W]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+                $step = if ($to -gt $from) { 6 } else { -6 }
+                for ($x = $from; [math]::Abs($to - $x) -gt 6; $x += $step) {
+                  [void][W]::SetCursorPos($origin.X + $x, $origin.Y + 113)
+                  Start-Sleep -Milliseconds 20
+                }
+                [void][W]::SetCursorPos($origin.X + $to, $origin.Y + 113)
+                Start-Sleep -Milliseconds 100
+                [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep 1
+                (Get-Content $prefs | ConvertFrom-Json).scale
               }
-              [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+              $largest = Drag 263 453
+              $back = Drag 453 326
+              "size slider: dragged to $largest×, back to $back×"
+              if ($largest -ne 2) { throw "dragging the size slider did not resize the pet (scale $largest)" }
               Start-Sleep 2
             }
             [void][W]::PostMessage($settings, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
