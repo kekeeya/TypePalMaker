@@ -396,7 +396,7 @@ export function App() {
                   <span className="action-icon">
                     <Sparkle />
                   </span>
-                  {busy ? t.generating : platform?.system === "windows" ? t.generatePet : t.generate}
+                  {busy ? t.generating : t.generatePet}
                 </button>
               )}
             </div>
