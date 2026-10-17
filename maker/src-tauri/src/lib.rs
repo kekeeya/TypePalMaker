@@ -17,6 +17,7 @@ const PATH_HEADER: &str = "x-path";
 const OVERWRITE_HEADER: &str = "x-overwrite";
 const KEY_HEADER: &str = "x-key";
 const LANG_HEADER: &str = "x-lang";
+const NAME_HEADER: &str = "x-name";
 
 fn header(request: &Request<'_>, name: &str) -> Result<String, String> {
     let value = request
@@ -81,12 +82,48 @@ fn store_get(app: tauri::AppHandle, key: String) -> Result<Response, String> {
     Ok(Response::new(std::fs::read(store_path(&app, &key)?).unwrap_or_default()))
 }
 
-/// Default destination for generated pets: `~/Applications`, where Launchpad
-/// and Spotlight find them without asking for admin rights.
+/// Default destination for generated pets: `~/Applications` on macOS, where
+/// Launchpad and Spotlight find them without asking for admin rights; the
+/// Desktop on Windows, where a single exe is easy to find.
 #[tauri::command]
 fn default_output_dir(app: tauri::AppHandle) -> Result<String, String> {
+    if cfg!(windows) {
+        let desktop = app.path().desktop_dir().map_err(|e| e.to_string())?;
+        return Ok(desktop.to_string_lossy().into_owned());
+    }
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
     Ok(home.join("Applications").to_string_lossy().into_owned())
+}
+
+/// Saves a Windows pet the front end built (`buildWindows.ts`). Headers: the
+/// folder, the file name, whether an existing one may be replaced. Errors are
+/// `CODE:detail`, as `generate_app`'s are.
+#[tauri::command]
+fn save_pet(request: Request) -> Result<String, String> {
+    let dir = PathBuf::from(header(&request, PATH_HEADER)?);
+    let name = header(&request, NAME_HEADER)?;
+    if name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(format!("ERROR:invalid name {name}"));
+    }
+    let overwrite = header(&request, OVERWRITE_HEADER).map(|v| v == "1").unwrap_or(false);
+    let target = dir.join(&name);
+    let shown = target.to_string_lossy().into_owned();
+    if target.exists() && !overwrite {
+        return Err(format!("EXISTS:{shown}"));
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| format!("ERROR:{e}"))?;
+    // Written beside and renamed over, so a failure never leaves half a pet.
+    let partial = dir.join(format!(".{name}.partial"));
+    std::fs::write(&partial, body(&request)?).map_err(|e| format!("ERROR:{e}"))?;
+    if let Err(e) = std::fs::rename(&partial, &target) {
+        let _ = std::fs::remove_file(&partial);
+        // A running exe can be neither replaced nor deleted.
+        return Err(match e.raw_os_error() {
+            Some(5) | Some(32) => format!("RUNNING:{shown}"),
+            _ => format!("ERROR:{e}"),
+        });
+    }
+    Ok(shown)
 }
 
 /// Body: the `.typepalproj` bytes. Headers: destination folder, and whether
@@ -106,8 +143,20 @@ fn generate_app(app: tauri::AppHandle, request: Request) -> Result<String, Strin
         .map_err(|e| e.to_wire())
 }
 
+/// Shows the generated pet selected in Finder or Explorer.
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Explorer parses its own command line: the path is quoted as-is.
+        return std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    #[cfg(not(windows))]
     std::process::Command::new("open")
         .args(["-R", &path])
         .status()
@@ -117,6 +166,16 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn open_app(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let dir = std::path::Path::new(&path).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        return std::process::Command::new(&path)
+            .current_dir(dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    #[cfg(not(windows))]
     std::process::Command::new("open")
         .arg(&path)
         .status()
@@ -131,6 +190,13 @@ fn open_link(url: String) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err(format!("not an https link: {url}"));
     }
+    #[cfg(windows)]
+    return std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", &url])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+    #[cfg(not(windows))]
     std::process::Command::new("open")
         .arg(&url)
         .status()
@@ -167,6 +233,7 @@ pub fn run() {
             store_delete,
             default_output_dir,
             generate_app,
+            save_pet,
             reveal_in_finder,
             open_app,
             open_link

@@ -30,6 +30,12 @@ interface DialogState {
 type View = "home" | "general" | "animation";
 const AUTOSAVE_DELAY_MS = 800;
 
+/** A shortcut as this system writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere. */
+const onMac = !navigator.userAgent.includes("Windows");
+function shortcut(key: string, shift = false) {
+  return onMac ? `${shift ? "⇧" : ""}⌘${key}` : `Ctrl+${shift ? "Shift+" : ""}${key}`;
+}
+
 export function App() {
   const t = useT();
   const project = useEditor((s) => s.project);
@@ -238,7 +244,10 @@ export function App() {
           title: t.generatedTitle,
           body: t.generatedBody(path),
           buttons: [
-            { label: t.showInFinder, onClick: () => (dismiss(), void platform.revealInFinder?.(path)) },
+            {
+              label: platform.system === "windows" ? t.showInFolder : t.showInFinder,
+              onClick: () => (dismiss(), void platform.revealInFinder?.(path)),
+            },
             { label: t.openNow, primary: true, onClick: () => (dismiss(), void platform.openApp?.(path)) },
           ],
         });
@@ -322,7 +331,7 @@ export function App() {
 
   return (
     <div className={`app view-${view}`}>
-      <TitleBar onHome={goHome} showLanguage={view === "home"} />
+      <TitleBar onHome={goHome} showLanguage={view === "home"} windowControls={platform?.kind === "desktop" && platform.system === "windows"} />
       {view === "home" ? (
         <Home
           platform={platform}
@@ -350,12 +359,12 @@ export function App() {
               <small>{t.autosaved}</small>
             </div>
             <div className="history-buttons">
-              <button className="history-button" aria-label={t.undo} title={`${t.undo} ⌘Z`} disabled={!canUndo} onClick={undo}>
+              <button className="history-button" aria-label={t.undo} title={`${t.undo} ${shortcut("Z")}`} disabled={!canUndo} onClick={undo}>
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M5.5 3.5 2.5 6.5l3 3M3 6.5h6.5a4 4 0 0 1 0 8H7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <button className="history-button" aria-label={t.redo} title={`${t.redo} ⇧⌘Z`} disabled={!canRedo} onClick={redo}>
+              <button className="history-button" aria-label={t.redo} title={`${t.redo} ${shortcut("Z", true)}`} disabled={!canRedo} onClick={redo}>
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path d="m10.5 3.5 3 3-3 3M13 6.5H6.5a4 4 0 0 0 0 8H9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>

@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { GenerateResult, Platform } from "./types";
 
+const windows = navigator.userAgent.includes("Windows");
+
+/** The file name at the end of a path, either system's. */
+const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+
 /** Bytes travel as the raw request body; paths and flags as headers, which
  *  must be ASCII — hence the encoding. */
 function headers(values: Record<string, string>) {
@@ -18,12 +23,13 @@ const OUTPUT_DIR_KEY = "output-dir";
 /** The desktop Maker: native dialogs, files on disk, and app generation. */
 export const tauriPlatform: Platform = {
   kind: "desktop",
+  system: windows ? "windows" : "mac",
 
   async openProject(label) {
     const path = await open({ multiple: false, filters: projectFilter(label) });
     if (typeof path !== "string") return null;
     const buffer = await invoke<ArrayBuffer>("read_binary", { path });
-    return { bytes: new Uint8Array(buffer), name: path.split("/").pop() ?? path };
+    return { bytes: new Uint8Array(buffer), name: fileName(path) };
   },
 
   async saveProject(bytes, suggestedName, label) {
@@ -40,7 +46,7 @@ export const tauriPlatform: Platform = {
     return Promise.all(
       paths.map(async (path) => {
         const buffer = await invoke<ArrayBuffer>("read_binary", { path });
-        const name = path.split("/").pop() ?? path;
+        const name = fileName(path);
         return new File([buffer], name, { type: IMAGE_TYPES[name.split(".").pop()?.toLowerCase() ?? ""] ?? "" });
       }),
     );
@@ -74,11 +80,24 @@ export const tauriPlatform: Platform = {
 
   async generateApp(bytes, { overwrite, outDir, lang }): Promise<GenerateResult> {
     try {
-      const path = await invoke<string>(
-        "generate_app",
-        bytes,
-        headers({ "x-path": outDir, "x-overwrite": overwrite ? "1" : "0", "x-lang": lang }),
-      );
+      let path: string;
+      if (windows) {
+        // Built in the page from the Windows template, as on the web, then
+        // saved where the user chose.
+        const { buildWindowsApp, loadWindowsTemplate } = await import("../model/appBuild/buildWindows");
+        const built = await buildWindowsApp(bytes, await loadWindowsTemplate(`${import.meta.env.BASE_URL}template/windows/`));
+        path = await invoke<string>(
+          "save_pet",
+          built.exe,
+          headers({ "x-path": outDir, "x-name": built.exeName, "x-overwrite": overwrite ? "1" : "0" }),
+        );
+      } else {
+        path = await invoke<string>(
+          "generate_app",
+          bytes,
+          headers({ "x-path": outDir, "x-overwrite": overwrite ? "1" : "0", "x-lang": lang }),
+        );
+      }
       return { ok: true, path };
     } catch (error) {
       const text = String(error);

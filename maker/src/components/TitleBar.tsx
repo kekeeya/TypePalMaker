@@ -5,20 +5,81 @@ import { useEditor } from "../store";
 
 /**
  * The window's top bar: the TypePal Maker wordmark and the language menu.
- * In the desktop Maker the window's own traffic lights sit in the empty
- * left column (overlay title bar), and the bar drags the window.
+ * In the Mac desktop Maker the window's own traffic lights sit in the empty
+ * left column (overlay title bar); the Windows one has no system title bar,
+ * so its minimise / maximise / close buttons are drawn at the right. Either
+ * way the bar drags the window.
  */
-export function TitleBar({ onHome, showLanguage }: { onHome: () => void; showLanguage: boolean }) {
+export function TitleBar({
+  onHome,
+  showLanguage,
+  windowControls = false,
+}: {
+  onHome: () => void;
+  showLanguage: boolean;
+  windowControls?: boolean;
+}) {
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <div />
+    <div className={windowControls ? "titlebar with-controls" : "titlebar"} data-tauri-drag-region>
+      <div data-tauri-drag-region />
       <button className="wordmark" onClick={onHome}>
         <span className="wordmark-type">Type</span>
         <span className="wordmark-pal">Pal</span>
         <b>MAKER</b>
         <Sparkle className="wordmark-spark" />
       </button>
-      {showLanguage && <LanguageMenu />}
+      <div className="titlebar-end" data-tauri-drag-region>
+        {showLanguage && <LanguageMenu />}
+        {windowControls && <WindowControls />}
+      </div>
+    </div>
+  );
+}
+
+/** Windows' caption buttons, in its own shapes and hover colours. */
+function WindowControls() {
+  const t = useT();
+  const [win, setWin] = useState<import("@tauri-apps/api/window").Window | null>(null);
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      const current = getCurrentWindow();
+      if (cancelled) return;
+      setWin(current);
+      setMaximized(await current.isMaximized());
+      stop = await current.onResized(async () => setMaximized(await current.isMaximized()));
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, []);
+
+  return (
+    <div className="window-controls">
+      <button className="window-control" aria-label={t.minimize} title={t.minimize} onClick={() => void win?.minimize()}>
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M0 5h10" />
+        </svg>
+      </button>
+      <button
+        className="window-control"
+        aria-label={maximized ? t.restore : t.maximize}
+        title={maximized ? t.restore : t.maximize}
+        onClick={() => void win?.toggleMaximize()}
+      >
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          {maximized ? <path d="M2.5 2.5V.5h7v7h-2M.5 2.5h7v7h-7z" /> : <path d="M.5.5h9v9h-9z" />}
+        </svg>
+      </button>
+      <button className="window-control close" aria-label={t.closeWindow} title={t.closeWindow} onClick={() => void win?.close()}>
+        <svg viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M.5.5l9 9M9.5.5l-9 9" />
+        </svg>
+      </button>
     </div>
   );
 }

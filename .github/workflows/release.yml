@@ -1,6 +1,7 @@
-# Builds the universal TypePalMaker.dmg on a clean GitHub Mac and attaches it
-# to a draft release, for a pushed version tag (v0.1.0, …), once every test
-# has passed. The draft is published by hand once checked.
+# Builds the universal TypePalMaker.dmg on a clean GitHub Mac and the Windows
+# installer on a Windows machine, and attaches both to a draft release, for a
+# pushed version tag (v0.1.0, …), once every test has passed. The draft is
+# published by hand once checked.
 name: Release
 
 on:
@@ -13,6 +14,10 @@ permissions:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
+
+  windows:
+    needs: test
+    uses: ./.github/workflows/maker-windows.yml
 
   dmg:
     needs: test
@@ -61,27 +66,49 @@ jobs:
           dmg="TypePalMaker-$VERSION.dmg"
           hdiutil create -volname TypePalMaker -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
           echo "DMG=$dmg" >> "$GITHUB_ENV"
-          echo "SHA=$(shasum -a 256 "$dmg" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dmg
+          path: ${{ env.DMG }}
+
+  release:
+    needs: [dmg, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dmg
+          path: files
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: TypePalMaker-windows
+          path: windows
 
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > notes.md <<EOF
+          mv windows/*-setup.exe files/
+          cd files
+          DMG=$(ls *.dmg); SETUP=$(ls *-setup.exe)
+          cat > ../notes.md <<EOF
           ## 安装
 
-          下载 \`$DMG\`，把 TypePalMaker 拖进「应用程序」。
+          **Mac**：下载 \`$DMG\`，把 TypePalMaker 拖进「应用程序」。第一次打开会被拦下（没有 Apple 开发者证书），走：**系统设置 → 隐私与安全性 → 「仍要打开」**。
 
-          第一次打开会被拦下（没有 Apple 开发者证书），走：**系统设置 → 隐私与安全性 → 「仍要打开」**。
+          **Windows**：下载 \`$SETUP\`，双击安装。浏览器提示文件不安全时，在下载列表里选择「保留」；第一次打开会被拦下（没有代码签名证书），点 **「更多信息」→「仍要运行」**。
 
           用 TypePalMaker 生成的桌宠直接双击就能打开，不需要再放行。
 
           ## 校验
 
           \`\`\`
-          SHA-256  $SHA  $DMG
+          SHA-256  $(sha256sum "$DMG" | cut -d' ' -f1)  $DMG
+          SHA-256  $(sha256sum "$SETUP" | cut -d' ' -f1)  $SETUP
           \`\`\`
 
-          核对方法：\`shasum -a 256 $DMG\`
+          核对方法：Mac 上 \`shasum -a 256 $DMG\`；Windows 上 \`certutil -hashfile $SETUP SHA256\`
           EOF
-          gh release create "$GITHUB_REF_NAME" "$DMG" --draft --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" "$DMG" "$SETUP" -R "$GITHUB_REPOSITORY" --draft --title "$GITHUB_REF_NAME" --notes-file ../notes.md

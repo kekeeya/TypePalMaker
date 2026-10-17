@@ -5,6 +5,9 @@
  */
 export interface Platform {
   kind: "desktop" | "web";
+  /** The system the desktop Maker runs on, which is the one its pets are
+   *  for. Absent on the web. */
+  system?: AppTarget;
 
   /** Lets the user pick a `.typepalproj`; null if they cancel. `label` names
    *  the file type in the system dialog, in the interface language. */

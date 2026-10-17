@@ -1,0 +1,75 @@
+# The Windows desktop Maker: its installer, built on a Windows machine with
+# the Windows pet template inside, then installed silently, opened and
+# photographed. The installer is kept as an artifact (and the release attaches
+# it, see release.yml).
+name: Windows Maker
+
+on:
+  push:
+    branches: [main, "dev_windows*"]
+    paths: ["maker/**", "player-windows/**", ".github/workflows/maker-windows.yml"]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  maker:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pet template
+        working-directory: player-windows
+        run: cargo build --release --bin TypePal
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: maker/package-lock.json
+
+      - name: Maker installer
+        working-directory: maker
+        run: |
+          npm ci
+          npm run tauri build
+          if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
+
+      - name: Name it
+        run: |
+          $version = (Get-Content maker\src-tauri\tauri.conf.json | ConvertFrom-Json).version
+          $setup = Get-ChildItem maker\src-tauri\target\release\bundle\nsis\*.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\out" | Out-Null
+          $named = "$env:RUNNER_TEMP\out\TypePalMaker-$version-setup.exe"
+          Copy-Item $setup.FullName $named
+          "{0}: {1:N1} MB" -f (Split-Path $named -Leaf), ((Get-Item $named).Length / 1MB)
+          "SETUP=$named" >> $env:GITHUB_ENV
+
+      - name: Install and open it
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\out" | Out-Null
+            $bmp.Save("$env:RUNNER_TEMP\out\$name.png")
+          }
+          Start-Process $env:SETUP -ArgumentList "/S" -Wait
+          $maker = Get-ChildItem "$env:LOCALAPPDATA\TypePalMaker" -Filter *.exe -Recurse | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+          if (-not $maker) { throw "the installer put no Maker in $env:LOCALAPPDATA\TypePalMaker" }
+          "installed: $($maker.FullName)"
+          $p = Start-Process $maker.FullName -PassThru
+          Start-Sleep 15
+          if ($p.HasExited) { throw "the Maker quit with $($p.ExitCode)" }
+          Shot maker
+          Stop-Process -Id $p.Id
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: TypePalMaker-windows
+          path: ${{ runner.temp }}\out\*
