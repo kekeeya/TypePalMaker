@@ -162,7 +162,7 @@ jobs:
             $settings = [IntPtr]::Zero
             for ($t = 0; $t -lt 30 -and $settings -eq [IntPtr]::Zero; $t++) {
               Start-Sleep -Milliseconds 200
-              $settings = [W]::FindWindow("TypePalSettings", $null)
+              $settings = [W]::FindWindow("TypePalSettings", [NullString]::Value)
             }
             if ($settings -eq [IntPtr]::Zero) {
               Add-Type -AssemblyName System.Drawing
