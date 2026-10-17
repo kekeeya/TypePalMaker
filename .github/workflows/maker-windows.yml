@@ -1,7 +1,7 @@
-# The Windows desktop Maker: its installer, built on a Windows machine with
-# the Windows pet template inside, then installed silently, opened and
-# photographed. The installer is kept as an artifact (and the release attaches
-# it, see release.yml).
+# The Windows desktop Maker: one portable exe (the interface and the Windows
+# pet template are inside it), zipped. Built on a Windows machine, unzipped
+# elsewhere, opened and photographed. The zip is kept as an artifact (and the
+# release attaches it, see release.yml).
 name: Windows Maker
 
 on:
@@ -30,24 +30,25 @@ jobs:
           cache: npm
           cache-dependency-path: maker/package-lock.json
 
-      - name: Maker installer
+      - name: Maker
         working-directory: maker
         run: |
           npm ci
           npm run tauri build
           if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
 
-      - name: Name it
+      - name: Zip it
         run: |
           $version = (Get-Content maker\src-tauri\tauri.conf.json | ConvertFrom-Json).version
-          $setup = Get-ChildItem maker\src-tauri\target\release\bundle\nsis\*.exe | Select-Object -First 1
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\out" | Out-Null
-          $named = "$env:RUNNER_TEMP\out\TypePalMaker-$version-setup.exe"
-          Copy-Item $setup.FullName $named
-          "{0}: {1:N1} MB" -f (Split-Path $named -Leaf), ((Get-Item $named).Length / 1MB)
-          "SETUP=$named" >> $env:GITHUB_ENV
+          $stage = "$env:RUNNER_TEMP\stage"
+          New-Item -ItemType Directory -Force $stage, "$env:RUNNER_TEMP\out" | Out-Null
+          Copy-Item maker\src-tauri\target\release\typepal-maker.exe "$stage\TypePalMaker.exe"
+          $zip = "$env:RUNNER_TEMP\out\TypePalMaker-$version-windows.zip"
+          Compress-Archive -Path "$stage\TypePalMaker.exe" -DestinationPath $zip
+          "{0}: {1:N1} MB" -f (Split-Path $zip -Leaf), ((Get-Item $zip).Length / 1MB)
+          "ZIP=$zip" >> $env:GITHUB_ENV
 
-      - name: Install and open it
+      - name: Unzip and open it
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           function Shot($name) {
@@ -58,11 +59,12 @@ jobs:
             New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\out" | Out-Null
             $bmp.Save("$env:RUNNER_TEMP\out\$name.png")
           }
-          Start-Process $env:SETUP -ArgumentList "/S" -Wait
-          $maker = Get-ChildItem "$env:LOCALAPPDATA\TypePalMaker" -Filter *.exe -Recurse | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
-          if (-not $maker) { throw "the installer put no Maker in $env:LOCALAPPDATA\TypePalMaker" }
-          "installed: $($maker.FullName)"
-          $p = Start-Process $maker.FullName -PassThru
+          # Somewhere else entirely, as a user would put it.
+          $dir = "$env:RUNNER_TEMP\unzipped"
+          Expand-Archive $env:ZIP -DestinationPath $dir
+          # The exe's own icon, as Explorer and the taskbar show it.
+          [System.Drawing.Icon]::ExtractAssociatedIcon("$dir\TypePalMaker.exe").ToBitmap().Save("$env:RUNNER_TEMP\out\maker-icon.png")
+          $p = Start-Process "$dir\TypePalMaker.exe" -PassThru
           Start-Sleep 15
           if ($p.HasExited) { throw "the Maker quit with $($p.ExitCode)" }
           Shot maker

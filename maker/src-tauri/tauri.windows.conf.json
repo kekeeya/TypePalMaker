@@ -14,18 +14,6 @@
     ]
   },
   "bundle": {
-    "targets": [
-      "nsis"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ],
-        "displayLanguageSelector": false
-      }
-    }
+    "active": false
   }
 }
