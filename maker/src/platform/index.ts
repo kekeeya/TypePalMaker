@@ -1,7 +1,7 @@
 import type { Platform } from "./types";
 import { webPlatform } from "./web";
 
-export type { GenerateResult, Platform } from "./types";
+export type { AppTarget, GenerateResult, Platform } from "./types";
 
 /**
  * Picked at runtime, so one build serves both targets: inside the Tauri shell

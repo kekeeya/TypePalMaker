@@ -34,9 +34,9 @@ export async function loadTemplate(base: string): Promise<Template> {
 
 /** The pet may be shown at up to 2× its designed height, on a Retina screen:
  *  frames are kept no taller than that — as the desktop generator does. */
-const MAX_SCALE = 2;
-const RETINA = 2;
-const STATES = ["idle", "typing", "mouseClick", "tap", "pet"] as const;
+export const MAX_SCALE = 2;
+export const RETINA = 2;
+export const STATES = ["idle", "typing", "mouseClick", "tap", "pet"] as const;
 
 /** Finder-safe file name, as `generator::file_safe`. */
 export function fileSafe(name: string): string {
@@ -138,7 +138,7 @@ function isCompressed(data: Uint8Array) {
 }
 
 /** Scales a frame down so its height is at most `maxPx`; never up. */
-async function fitHeight(png: Uint8Array, maxPx: number): Promise<Uint8Array> {
+export async function fitHeight(png: Uint8Array, maxPx: number): Promise<Uint8Array> {
   const image = await createImageBitmap(new Blob([png as BlobPart], { type: "image/png" }));
   try {
     if (image.height <= maxPx) return png;

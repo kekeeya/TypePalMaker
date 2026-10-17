@@ -619,7 +619,7 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
   background: var(--paper);
   border-bottom: 1px solid #e9e4dd;
 }
-.back-link { display: flex; align-items: center; gap: 4px; color: var(--purple-text); font-weight: 600; font-size: 14px; margin-top: 2px; }
+.back-link { display: flex; align-items: center; gap: 4px; color: var(--purple-text); font-weight: 600; font-size: 14px; margin-top: 2px; white-space: nowrap; flex: none; }
 .back-link svg { width: 5px; height: 9px; }
 .project-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-top: -2px; }
 .project-heading b { display: flex; align-items: center; gap: 2px; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -643,6 +643,8 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .history-button:disabled { color: #b9b8c8; opacity: 1; box-shadow: none; }
 .editor-actions { margin-left: auto; display: flex; gap: 11px; margin-top: 2px; }
 .action {
+  flex: none;
+  white-space: nowrap;
   height: 44px;
   padding: 0 16px 0 13px;
   border-radius: 13px;
@@ -654,6 +656,12 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
   font-size: 13px;
 }
 .action:active { transform: translateY(3px); box-shadow: none; }
+/* The narrowest windows: tighter spacing, so the pet's name keeps its room. */
+@media (max-width: 1100px) {
+  .editor-head { gap: 14px; }
+  .editor-actions { gap: 8px; }
+  .action { padding: 0 12px 0 10px; gap: 6px; }
+}
 .action-icon {
   width: 26px;
   height: 26px;

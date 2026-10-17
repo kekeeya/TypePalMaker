@@ -7,9 +7,9 @@ name: Windows
 on:
   push:
     branches: [main, dev_windows]
-    paths: ["player-windows/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
+    paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
   pull_request:
-    paths: ["player-windows/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
+    paths: ["player-windows/**", "maker/src/model/appBuild/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
   workflow_call:
 
@@ -37,10 +37,33 @@ jobs:
           cargo build --release
           "{0:N0} KB" -f ((Get-Item target\release\TypePal.exe).Length / 1KB)
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: maker/package-lock.json
+
+      # The web Maker's generator, run on the real template; the runtime then
+      # reads what it made.
+      - name: A pet from the web Maker
+        env:
+          TYPEPAL_WIN_TEMPLATE: ${{ github.workspace }}\player-windows\target\release\TypePal.exe
+          TYPEPAL_SMOKE_DIR: ${{ runner.temp }}\out
+        run: |
+          Push-Location maker
+          npm ci
+          npx vitest run src/model/appBuild/buildWindows.test.ts
+          Pop-Location
+          if (-not (Test-Path "$env:RUNNER_TEMP\out\web.exe")) { throw "the web Maker made no pet" }
+          Push-Location player-windows
+          $env:TYPEPAL_WEB_EXE = "$env:RUNNER_TEMP\out\web.exe"
+          cargo test --test mascot
+          Pop-Location
+
       - name: Pack the mascot
         run: |
           $out = "$env:RUNNER_TEMP\out"
-          New-Item -ItemType Directory $out | Out-Null
+          New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item player-windows\target\release\TypePal.exe "$out\TypePal.exe"
           & player-windows\target\release\typepal-pack.exe "$out\TypePal.exe" --mascot maker\public\assets\typepal-frames "$out\TypePal 小团子.exe"
           if ($LASTEXITCODE -ne 0) { throw "packing failed" }
@@ -70,6 +93,13 @@ jobs:
           $p = Get-Process -Id $pet.Id
           "{0:N1} MB working set, {1:N2} s CPU" -f ($p.WorkingSet64 / 1MB), $p.CPU
           Stop-Process -Id $pet.Id
+
+          # The pet the web Maker made runs too.
+          $web = Start-Process "$env:RUNNER_TEMP\out\web.exe" -PassThru
+          Start-Sleep 6
+          if ($web.HasExited) { throw "the web Maker's pet quit with $($web.ExitCode)" }
+          Shot web
+          Stop-Process -Id $web.Id
 
       - uses: actions/upload-artifact@v7
         if: always()

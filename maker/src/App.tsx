@@ -18,7 +18,7 @@ import { decodeProject, encodeProject } from "./model/projectFile";
 import { templateProject } from "./model/template";
 import { emptyProject, newId, PET_STATES, type PetState, type Project } from "./model/types";
 import { validate } from "./model/validate";
-import { loadPlatform, type GenerateResult, type Platform } from "./platform";
+import { loadPlatform, type AppTarget, type GenerateResult, type Platform } from "./platform";
 import { useEditor } from "./store";
 
 interface DialogState {
@@ -46,7 +46,8 @@ export function App() {
   const [platform, setPlatform] = useState<Platform | null>(null);
   const [drafts, setDrafts] = useState<DraftInfo[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
-  const [busy, setBusy] = useState(false);
+  /** Which app is being generated, if one is. */
+  const [busy, setBusy] = useState<AppTarget | null>(null);
   const [baked, setBaked] = useState<Project | null>(null);
   /** Set from the first click on 生成 App until it is done. */
   const generating = useRef(false);
@@ -193,7 +194,7 @@ export function App() {
   }, [platform, alert, t]);
 
   const generate = useCallback(
-    async (overwrite = false, chosenDir?: string) => {
+    async (overwrite = false, chosenDir?: string, target: AppTarget = "mac") => {
       if (!platform) return;
       if (!platform.generateApp) return;
       const p = useEditor.getState().project;
@@ -215,22 +216,22 @@ export function App() {
         } else {
           outDir = "";
         }
-        setBusy(true);
+        setBusy(target);
         const ready = await bakeProject(p);
         const bytes = encodeProject(ready);
         releaseBaked(ready);
-        result = await platform.generateApp(bytes, { overwrite, outDir, lang: useEditor.getState().lang });
+        result = await platform.generateApp(bytes, { overwrite, outDir, lang: useEditor.getState().lang, target });
       } catch (e) {
         result = { ok: false, reason: "error", message: String(e) };
       } finally {
         generating.current = false;
-        setBusy(false);
+        setBusy(null);
       }
 
       const dismiss = () => setDialog(null);
       if (!result) return;
       if (result.ok && platform.kind === "web") {
-        alert(t.downloadedTitle, t.downloadedBody(result.path));
+        alert(t.downloadedTitle, target === "windows" ? t.downloadedBodyWindows(result.path) : t.downloadedBody(result.path));
       } else if (result.ok) {
         const path = result.path;
         setDialog({
@@ -371,12 +372,24 @@ export function App() {
                 </span>
                 {t.previewPet}
               </button>
-              <button className="action action-generate" disabled={busy} onClick={() => void generate()}>
-                <span className="action-icon">
-                  <Sparkle />
-                </span>
-                {busy ? t.generating : t.generate}
-              </button>
+              {platform?.kind === "web" ? (
+                // The web makes either; the desktop Maker only its own system's.
+                (["mac", "windows"] as const).map((target) => (
+                  <button key={target} className="action action-generate" disabled={busy !== null} onClick={() => void generate(false, undefined, target)}>
+                    <span className="action-icon">
+                      <Sparkle />
+                    </span>
+                    {busy === target ? t.generating : target === "mac" ? t.generateMac : t.generateWindows}
+                  </button>
+                ))
+              ) : (
+                <button className="action action-generate" disabled={busy !== null} onClick={() => void generate()}>
+                  <span className="action-icon">
+                    <Sparkle />
+                  </span>
+                  {busy ? t.generating : t.generate}
+                </button>
+              )}
             </div>
           </header>
           <div className="editor-body">

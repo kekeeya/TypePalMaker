@@ -31,3 +31,15 @@ if (missing.length) {
 mkdirSync(out, { recursive: true });
 for (const [name, from] of Object.entries(files)) copyFileSync(from, join(out, name));
 console.log(`template copied to ${out}`);
+
+// The Windows template, built by player-windows on Windows (CI hands it to
+// the Pages build). Optional here: without it only "Generate Windows Pet"
+// fails, and the Pages workflow checks it is there before publishing.
+const windows = process.env.TYPEPAL_WIN_TEMPLATE ?? join(here, "../../player-windows/target/release/TypePal.exe");
+if (existsSync(windows)) {
+  mkdirSync(join(out, "windows"), { recursive: true });
+  copyFileSync(windows, join(out, "windows/TypePal.exe"));
+  console.log(`Windows template copied to ${join(out, "windows")}`);
+} else {
+  console.warn(`No Windows template (${windows}): this build can't make Windows pets.`);
+}

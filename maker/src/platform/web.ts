@@ -1,5 +1,5 @@
 import { del, get, set } from "idb-keyval";
-import type { Platform } from "./types";
+import type { GenerateResult, Platform } from "./types";
 
 const PREFIX = "typepal-maker:";
 
@@ -45,7 +45,8 @@ export const webPlatform: Platform = {
     window.open(url, "_blank", "noopener");
   },
 
-  async generateApp(bytes, { lang }) {
+  async generateApp(bytes, { lang, target = "mac" }) {
+    if (target === "windows") return generateWindows(bytes, lang);
     try {
       // Loaded only when needed: neither the builder nor the template is
       // part of the page until someone generates an app.
@@ -66,6 +67,29 @@ export const webPlatform: Platform = {
     }
   },
 };
+
+const networkError = (lang: "zh" | "en") =>
+  lang === "zh" ? "网络异常，请检查网络或刷新页面后重试。" : "Network error. Check your connection or reload the page, then try again.";
+
+/** A Windows pet, built in the page from the Windows template. */
+async function generateWindows(bytes: Uint8Array, lang: "zh" | "en"): Promise<GenerateResult> {
+  try {
+    let parts;
+    try {
+      const { buildWindowsApp, loadWindowsTemplate } = await import("../model/appBuild/buildWindows");
+      parts = { buildWindowsApp, template: await loadWindowsTemplate(`${import.meta.env.BASE_URL}template/windows/`) };
+    } catch {
+      return { ok: false, reason: "error", message: networkError(lang) };
+    }
+    const built = await parts.buildWindowsApp(bytes, parts.template);
+    // Told apart from the Mac download of the same pet.
+    const fileName = `${built.exeName.replace(/\.exe$/, "")} (Windows).zip`;
+    download(built.zip, fileName);
+    return { ok: true, path: fileName };
+  } catch (error) {
+    return { ok: false, reason: "error", message: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 /** Hands bytes to the browser as a file download. */
 function download(bytes: Uint8Array, fileName: string) {

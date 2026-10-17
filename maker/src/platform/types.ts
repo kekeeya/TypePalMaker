@@ -34,10 +34,14 @@ export interface Platform {
    *  on the web in the browser, downloaded as a zip (`outDir` unused, and the
    *  result's path is the zip's file name). `lang` is the interface
    *  language, for the error messages. */
-  generateApp?(bytes: Uint8Array, options: { overwrite: boolean; outDir: string; lang: "zh" | "en" }): Promise<GenerateResult>;
+  generateApp?(bytes: Uint8Array, options: { overwrite: boolean; outDir: string; lang: "zh" | "en"; target?: AppTarget }): Promise<GenerateResult>;
   revealInFinder?(path: string): Promise<void>;
   openApp?(path: string): Promise<void>;
 }
+
+/** Which system the pet app is for. The desktop Maker makes only its own
+ *  system's; the web Maker makes either. */
+export type AppTarget = "mac" | "windows";
 
 export type GenerateResult =
   | { ok: true; path: string }

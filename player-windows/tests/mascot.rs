@@ -50,3 +50,21 @@ fn the_mascot_packs_reads_back_and_decodes() {
     assert_eq!(behavior.current, PetState::Idle);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A pet the web Maker generated (`buildWindows.ts`), when `TYPEPAL_WEB_EXE`
+/// names one: the runtime reads it as it reads its own packer's.
+#[test]
+fn a_pet_from_the_web_maker_reads_back() {
+    let Some(path) = std::env::var_os("TYPEPAL_WEB_EXE") else {
+        eprintln!("skipped: TYPEPAL_WEB_EXE not set");
+        return;
+    };
+    let source = PetSource::packed(Path::new(&path)).unwrap().expect("a pet in the exe");
+    let manifest = PetManifest::load(&source.read("manifest.json").unwrap()).unwrap();
+    let mut store = FrameStore::new(&manifest, &source);
+    assert!(store.unreadable_frame_ids().is_empty());
+    store.configure(192.0);
+    for id in manifest.used_frame_ids() {
+        assert!(store.frame(&id, &source).is_some(), "{id}");
+    }
+}

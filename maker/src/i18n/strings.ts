@@ -53,11 +53,15 @@ const zh = {
   exportProject: "导出工程",
   previewPet: "预览桌宠",
   generate: "生成 App",
+  generateMac: "生成Mac桌宠",
+  generateWindows: "生成Windows桌宠",
   generating: "正在生成…",
   chooseOutputDir: "选择 App 的生成位置",
   downloadedTitle: "桌宠已下载",
   downloadedBody: (file: string) =>
     `已下载「${file}」，接下来：\n1. 解压文件，然后把解压出的 App 拖进「应用程序」文件夹。\n2. 双击打开。第一次会被 macOS 拦下：先点「完成」，再打开「系统设置 → 隐私与安全性」，在页面下方看到「已阻止使用…」点「仍要打开」。`,
+  downloadedBodyWindows: (file: string) =>
+    `已下载「${file}」，接下来：\n1. 如果浏览器提示文件不安全，在浏览器的下载列表里选择「保留」。\n2. 解压文件，把解压出的 exe 放到你想放的文件夹。\n3. 双击打开。第一次会被 Windows 拦下：先点「更多信息」，再点「仍要运行」。`,
 
   general: "通用",
   basicInfo: "基本信息",
@@ -167,11 +171,15 @@ const en: Strings = {
   exportProject: "Export Project",
   previewPet: "Preview Pet",
   generate: "Generate App",
+  generateMac: "Make Mac Pet",
+  generateWindows: "Make Windows Pet",
   generating: "Generating…",
   chooseOutputDir: "Choose where to save the app",
   downloadedTitle: "Your pet is downloaded",
   downloadedBody: (file) =>
     `Downloaded “${file}”. Next:\n1. Unzip it, then drag the app into your Applications folder.\n2. Double-click to open. The first time, macOS blocks it: click Done, then open System Settings › Privacy & Security, find “… was blocked” near the bottom and click “Open Anyway”.`,
+  downloadedBodyWindows: (file) =>
+    `Downloaded “${file}”. Next:\n1. If your browser says the file isn't safe, choose “Keep” in its downloads list.\n2. Unzip it and put the exe in any folder you like.\n3. Double-click to open. The first time, Windows stops it: click “More info”, then “Run anyway”.`,
 
   general: "General",
   basicInfo: "Basics",
