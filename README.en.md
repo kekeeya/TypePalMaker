@@ -25,6 +25,7 @@
 <p align="center">
   <a href="https://kekeeya.github.io/TypePalMaker/"><img src="https://img.shields.io/badge/Try%20it-in%20your%20browser-8c84e4?style=for-the-badge" alt="Try it in your browser"></a>
   <a href="https://github.com/kekeeya/TypePalMaker/releases/latest"><img src="https://img.shields.io/badge/Download-for%20Mac-46405f?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Mac"></a>
+  <a href="https://github.com/kekeeya/TypePalMaker/releases/latest"><img src="https://img.shields.io/badge/Download-for%20Windows-46405f?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Download for Windows"></a>
 </p>
 
 ## Features
