@@ -1,0 +1,61 @@
+[package]
+name = "typepal-windows"
+version = "0.1.0"
+description = "The TypePal desktop pet runtime for Windows"
+license = "GPL-3.0-only"
+repository = "https://github.com/kekeeya/TypePalMaker"
+edition = "2024"
+rust-version = "1.90"
+
+# Everything that does not touch Windows lives in the library, so it builds
+# and is tested on any machine; the executable is the Win32 shell around it.
+[lib]
+name = "typepal"
+path = "src/lib.rs"
+
+[[bin]]
+name = "TypePal"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+png = "0.18"
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+fontdue = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_Globalization",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-resource = "3"
+
+# Small and fast: the template is downloaded by the web Maker for every pet.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Image resampling is far too slow unoptimised; tests decode real frames.
+[profile.dev.package."*"]
+opt-level = 3

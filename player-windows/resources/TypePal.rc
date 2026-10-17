@@ -1,0 +1,31 @@
+// The template's resources. The Maker replaces the icon (group 1) and the
+// names in the version information for each pet it makes.
+#pragma code_page(65001)
+
+1 ICON "TypePal.ico"
+1 24 "TypePal.manifest"
+
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "TypePal Maker"
+      VALUE "FileDescription", "TypePal"
+      VALUE "FileVersion", "0.1.0"
+      VALUE "InternalName", "TypePal"
+      VALUE "OriginalFilename", "TypePal.exe"
+      VALUE "ProductName", "TypePal"
+      VALUE "ProductVersion", "0.1.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

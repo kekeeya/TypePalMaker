@@ -1,0 +1,81 @@
+# The Windows pet, on a Windows machine: its tests (the settings window drawn
+# with Windows' own fonts among them), the template exe, the built-in mascot
+# packed into it, and the mascot launched and photographed. Everything made is
+# kept as an artifact, to copy to a real PC and try.
+name: Windows
+
+on:
+  push:
+    branches: [main, dev_windows]
+    paths: ["player-windows/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["player-windows/**", "maker/public/assets/typepal-frames/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fonts the interface can use
+        run: Get-ChildItem "$env:WINDIR\Fonts" -Include msyh*, simsun*, segoeui* -Recurse | Format-Table Name, Length
+
+      - name: Tests
+        working-directory: player-windows
+        env:
+          TYPEPAL_UI_OUT: ${{ runner.temp }}\ui
+        run: cargo test
+
+      - name: Template
+        working-directory: player-windows
+        run: |
+          cargo build --release
+          "{0:N0} KB" -f ((Get-Item target\release\TypePal.exe).Length / 1KB)
+
+      - name: Pack the mascot
+        run: |
+          $out = "$env:RUNNER_TEMP\out"
+          New-Item -ItemType Directory $out | Out-Null
+          Copy-Item player-windows\target\release\TypePal.exe "$out\TypePal.exe"
+          & player-windows\target\release\typepal-pack.exe "$out\TypePal.exe" --mascot maker\public\assets\typepal-frames "$out\TypePal 小团子.exe"
+          if ($LASTEXITCODE -ne 0) { throw "packing failed" }
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Run it
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\shots" | Out-Null
+            $bmp.Save("$env:RUNNER_TEMP\shots\$name.png")
+          }
+          $exe = "$env:RUNNER_TEMP\out\TypePal 小团子.exe"
+          $pet = Start-Process $exe -PassThru
+          Start-Sleep 6
+          if ($pet.HasExited) { throw "the pet quit with $($pet.ExitCode)" }
+          Shot pet
+          # Launching it again opens the running pet's settings.
+          Start-Process $exe
+          Start-Sleep 4
+          if ($pet.HasExited) { throw "the pet quit with $($pet.ExitCode)" }
+          Shot settings
+          $p = Get-Process -Id $pet.Id
+          "{0:N1} MB working set, {1:N2} s CPU" -f ($p.WorkingSet64 / 1MB), $p.CPU
+          Stop-Process -Id $pet.Id
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: TypePal-windows
+          path: |
+            ${{ runner.temp }}\out\*.exe
+            ${{ runner.temp }}\shots\*.png
+            ${{ runner.temp }}\ui\*.png
