@@ -1,7 +1,8 @@
 //! Drawing primitives for the custom-drawn interface: rounded shapes with
-//! tiny-skia, text with fontdue. Everything is laid out in points (DIPs) and
+//! tiny-skia, text with ab_glyph. Everything is laid out in points (DIPs) and
 //! drawn at the window's scale, so one layout serves every DPI.
 
+use ab_glyph::{Font, FontRef, GlyphId, PxScale, ScaleFont, point};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -174,20 +175,20 @@ impl Canvas {
     pub fn text(&mut self, s: &str, x: f32, baseline: f32, size: f32, weight: Weight, color: Color) -> f32 {
         let fonts = fonts();
         let px = size * self.scale;
-        let font = fonts.get(weight);
+        let font = fonts.get(weight).as_scaled(em_scale(fonts.get(weight), px));
         let mut pen = x * self.scale;
-        let base = baseline * self.scale;
-        let mut prev: Option<char> = None;
+        let base = (baseline * self.scale).round() as i32;
+        let mut prev: Option<GlyphId> = None;
         for ch in s.chars() {
+            let id = font.glyph_id(ch);
             if let Some(p) = prev {
-                pen += font.horizontal_kern(p, ch, px).unwrap_or(0.0);
+                pen += font.kern(p, id);
             }
             let glyph = fonts.glyph(weight, ch, px);
-            let left = (pen + glyph.xmin as f32).round() as i32;
-            let top = (base - glyph.ymin as f32 - glyph.height as f32).round() as i32;
-            self.blend_coverage(&glyph.coverage, glyph.width, glyph.height, left, top, color);
+            let left = pen.round() as i32 + glyph.left;
+            self.blend_coverage(&glyph.coverage, glyph.width, glyph.height, left, base + glyph.top, color);
             pen += glyph.advance;
-            prev = Some(ch);
+            prev = Some(id);
         }
         pen / self.scale - x
     }
@@ -260,49 +261,66 @@ pub enum Weight {
 }
 
 pub fn measure(s: &str, size: f32, weight: Weight) -> f32 {
-    let fonts = fonts();
-    let font = fonts.get(weight);
-    let px = size * 4.0;
+    let raw = fonts().get(weight);
+    let font = raw.as_scaled(em_scale(raw, size));
     let mut w = 0.0;
-    let mut prev = None;
+    let mut prev: Option<GlyphId> = None;
     for ch in s.chars() {
+        let id = font.glyph_id(ch);
         if let Some(p) = prev {
-            w += font.horizontal_kern(p, ch, px).unwrap_or(0.0);
+            w += font.kern(p, id);
         }
-        w += font.metrics(ch, px).advance_width;
-        prev = Some(ch);
+        w += font.h_advance(id);
+        prev = Some(id);
     }
-    w / 4.0
+    w
+}
+
+/// The scale at which `px` is the em size, as font sizes are given (ab_glyph
+/// scales by ascent − descent otherwise).
+fn em_scale(font: &FontRef<'static>, px: f32) -> PxScale {
+    let em = font.units_per_em().unwrap_or(1000.0);
+    PxScale::from(px * font.height_unscaled() / em)
 }
 
 /// Where the baseline goes for text vertically centred on `mid_y`, centring
 /// the ascent and descent of the font as a text field's line does.
 pub fn baseline_for_center(mid_y: f32, size: f32, weight: Weight) -> f32 {
-    let fonts = fonts();
-    let lm = fonts.get(weight).horizontal_line_metrics(size).unwrap();
+    let raw = fonts().get(weight);
+    let font = raw.as_scaled(em_scale(raw, size));
     // The CJK-heavy fonts carry tall ascents; centre on the glyph body.
-    let ascent = lm.ascent.min(size * 0.92);
-    let descent = lm.descent.max(-size * 0.24);
+    let ascent = font.ascent().min(size * 0.92);
+    let descent = font.descent().max(-size * 0.24);
     mid_y + (ascent + descent) / 2.0
 }
 
+/// A rasterised glyph: its coverage, placed relative to the pen on the
+/// baseline (`top` is negative above it).
 struct Glyph {
-    xmin: i32,
-    ymin: i32,
+    left: i32,
+    top: i32,
     width: usize,
     height: usize,
     advance: f32,
     coverage: Vec<u8>,
 }
 
+/// The two interface fonts and the glyphs drawn so far.
+///
+/// Glyphs are read from the font file only when first drawn, and only those
+/// are kept (a few hundred at most), so the fonts cost next to nothing to hold.
+/// (A font library that parses every glyph up front would hold hundreds of
+/// megabytes for a CJK font, for the whole life of the pet.) On Windows the
+/// font files are mapped, not copied: the system reads in only the parts used,
+/// shared with every other app using the same font.
 pub struct Fonts {
-    regular: fontdue::Font,
-    bold: fontdue::Font,
+    regular: FontRef<'static>,
+    bold: FontRef<'static>,
     cache: std::sync::Mutex<HashMap<(Weight, char, u32), std::sync::Arc<Glyph>>>,
 }
 
 impl Fonts {
-    fn get(&self, weight: Weight) -> &fontdue::Font {
+    fn get(&self, weight: Weight) -> &FontRef<'static> {
         match weight {
             // YaHei has no medium: the bold reads closest to PingFang's
             // medium at these sizes.
@@ -316,15 +334,23 @@ impl Fonts {
         if let Some(g) = self.cache.lock().unwrap().get(&key) {
             return g.clone();
         }
-        let (m, coverage) = self.get(weight).rasterize(ch, px);
-        let g = std::sync::Arc::new(Glyph {
-            xmin: m.xmin,
-            ymin: m.ymin,
-            width: m.width,
-            height: m.height,
-            advance: m.advance_width,
-            coverage,
-        });
+        let font = self.get(weight);
+        let scale = em_scale(font, px);
+        let id = font.glyph_id(ch);
+        let advance = font.as_scaled(scale).h_advance(id);
+        let mut g = Glyph { left: 0, top: 0, width: 0, height: 0, advance, coverage: Vec::new() };
+        if let Some(outline) = font.outline_glyph(id.with_scale_and_position(scale, point(0.0, 0.0))) {
+            let bounds = outline.px_bounds();
+            let (w, h) = (bounds.width() as usize, bounds.height() as usize);
+            let mut coverage = vec![0u8; w * h];
+            outline.draw(|x, y, c| {
+                if let Some(px) = coverage.get_mut(y as usize * w + x as usize) {
+                    *px = (c * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
+            });
+            g = Glyph { left: bounds.min.x as i32, top: bounds.min.y as i32, width: w, height: h, advance, coverage };
+        }
+        let g = std::sync::Arc::new(g);
         self.cache.lock().unwrap().insert(key, g.clone());
         g
     }
@@ -360,17 +386,60 @@ pub fn fonts() -> &'static Fonts {
     })
 }
 
-fn load_first(candidates: &[String]) -> Option<fontdue::Font> {
+fn load_first(candidates: &[String]) -> Option<FontRef<'static>> {
     for spec in candidates.iter().filter(|s| !s.is_empty()) {
         let (path, index) = match spec.rsplit_once('#') {
             Some((p, i)) => (p, i.parse().unwrap_or(0)),
             None => (spec.as_str(), 0),
         };
-        let Ok(bytes) = std::fs::read(path) else { continue };
-        let settings = fontdue::FontSettings { collection_index: index, scale: 40.0, ..Default::default() };
-        if let Ok(font) = fontdue::Font::from_bytes(bytes, settings) {
+        let Some(data) = font_file(path) else { continue };
+        if let Ok(font) = FontRef::try_from_slice_and_index(data, index) {
             return Some(font);
         }
     }
     None
+}
+
+/// A font file's bytes for the rest of the run: mapped on Windows, read
+/// elsewhere (where only tests and previews draw).
+fn font_file(path: &str) -> Option<&'static [u8]> {
+    #[cfg(windows)]
+    {
+        map_file(path)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::read(path).ok().map(|bytes| &*Box::leak(bytes.into_boxed_slice()))
+    }
+}
+
+#[cfg(windows)]
+fn map_file(path: &str) -> Option<&'static [u8]> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, GetFileSizeEx, OPEN_EXISTING};
+    use windows_sys::Win32::System::Memory::{CreateFileMappingW, FILE_MAP_READ, MapViewOfFile, PAGE_READONLY};
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let file = CreateFileW(wide.as_ptr(), GENERIC_READ, FILE_SHARE_READ, std::ptr::null(), OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, std::ptr::null_mut());
+        if file == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut size = 0i64;
+        let mapping = if GetFileSizeEx(file, &mut size) != 0 && size > 0 {
+            CreateFileMappingW(file, std::ptr::null(), PAGE_READONLY, 0, 0, std::ptr::null())
+        } else {
+            std::ptr::null_mut()
+        };
+        CloseHandle(file);
+        if mapping.is_null() {
+            return None;
+        }
+        // The view keeps the mapping alive once both handles are closed.
+        let view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+        CloseHandle(mapping);
+        if view.Value.is_null() {
+            return None;
+        }
+        Some(std::slice::from_raw_parts(view.Value as *const u8, size as usize))
+    }
 }

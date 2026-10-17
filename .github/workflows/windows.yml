@@ -110,6 +110,73 @@ jobs:
           Shot web
           Stop-Process -Id $web.Id
 
+      # Days of running, compressed: settings opened and closed again and again,
+      # a minute of the pointer sweeping over the pet with keys pressed, then
+      # rest. Memory, handles and GDI objects must stay flat, and an idle pet
+      # must cost next to no CPU.
+      - name: Long run
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices;
+          public static class W {
+            [DllImport("user32.dll")] public static extern uint GetGuiResources(IntPtr process, uint flags);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+            [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+          }
+          "@
+          $exe = "$env:RUNNER_TEMP\out\TypePal 小团子.exe"
+          $pet = Start-Process $exe -PassThru
+          Start-Sleep 5
+          function Sample($when) {
+            $p = Get-Process -Id $pet.Id
+            [pscustomobject]@{
+              when = $when
+              privateMB = [math]::Round($p.PrivateMemorySize64 / 1MB, 1)
+              workingMB = [math]::Round($p.WorkingSet64 / 1MB, 1)
+              handles = $p.HandleCount
+              gdi = [W]::GetGuiResources($p.Handle, 0)
+              user = [W]::GetGuiResources($p.Handle, 1)
+              cpuS = [math]::Round($p.TotalProcessorTime.TotalSeconds, 2)
+            }
+          }
+          $start = Sample "started"
+          for ($i = 0; $i -lt 10; $i++) {
+            Start-Process $exe
+            Start-Sleep 2
+            $settings = [W]::FindWindow("TypePalSettings", $null)
+            if ($settings -eq [IntPtr]::Zero) { throw "the settings window did not open" }
+            [void][W]::PostMessage($settings, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
+            Start-Sleep 1
+          }
+          $settings = Sample "settings opened and closed 10 times"
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+          $end = (Get-Date).AddSeconds(60)
+          $n = 0
+          while ((Get-Date) -lt $end) {
+            $x = $screen.Right - 150 + [int](60 * [math]::Sin($n / 3))
+            [void][W]::SetCursorPos($x, $screen.Bottom - 100)
+            if ($n % 20 -eq 0) { [W]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero); [W]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero) }
+            $n++
+            Start-Sleep -Milliseconds 30
+          }
+          $used = Sample "a minute of use"
+          Start-Sleep 30
+          $idle = Sample "30 s left alone"
+          @($start, $settings, $used, $idle) | Format-Table -AutoSize
+          Stop-Process -Id $pet.Id
+
+          $grew = $idle.privateMB - $settings.privateMB
+          $idleCpu = $idle.cpuS - $used.cpuS
+          "memory after the first settings: +$grew MB; GDI +$($idle.gdi - $settings.gdi); USER +$($idle.user - $settings.user); handles +$($idle.handles - $settings.handles); idle CPU $idleCpu s in 30 s"
+          if ($settings.privateMB -gt 80) { throw "too much memory with the settings used: $($settings.privateMB) MB" }
+          if ($grew -gt 4) { throw "memory grew by $grew MB" }
+          if ($idle.gdi - $settings.gdi -gt 5 -or $idle.user - $settings.user -gt 5) { throw "GDI or USER objects grew" }
+          if ($idle.handles - $settings.handles -gt 30) { throw "handles grew" }
+          if ($idleCpu -gt 0.6) { throw "an idle pet used $idleCpu s of CPU in 30 s" }
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:

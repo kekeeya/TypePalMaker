@@ -110,6 +110,8 @@ pub struct App {
     last_input_tick: u32,
     full_screen_hidden: bool,
     tray_added: bool,
+    /// Loaded once: every load is a new icon handle.
+    tray_icon: HICON,
     taskbar_created: u32,
     /// Closing a window hands activation back to the invisible host; that is
     /// not a click on the taskbar button.
@@ -241,6 +243,7 @@ pub fn run() {
         last_input_tick: 0,
         full_screen_hidden: false,
         tray_added: false,
+        tray_icon: app_icon(unsafe { GetSystemMetrics(SM_CXSMICON) }),
         taskbar_created,
         ignore_activation_until: 0.0,
         settings: None,
@@ -451,7 +454,7 @@ impl App {
         data.uID = 1;
         data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         data.uCallbackMessage = WM_APP_TRAY;
-        data.hIcon = app_icon(unsafe { GetSystemMetrics(SM_CXSMICON) });
+        data.hIcon = self.tray_icon;
         let tip: Vec<u16> = self.manifest.name.encode_utf16().take(127).collect();
         data.szTip[..tip.len()].copy_from_slice(&tip);
         data
