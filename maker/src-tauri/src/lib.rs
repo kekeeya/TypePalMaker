@@ -252,6 +252,16 @@ pub fn run() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            // The taskbar shows the window's own icon; without a title bar
+            // (and without an installer) Windows otherwise draws a generic one.
+            #[cfg(windows)]
+            if let Some(window) = _app.get_webview_window("main") {
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?;
+                window.set_icon(icon)?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             read_binary,
             write_binary,
