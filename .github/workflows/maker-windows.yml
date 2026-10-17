@@ -49,13 +49,15 @@ jobs:
           "ZIP=$zip" >> $env:GITHUB_ENV
 
 
-      # Nothing beyond what every Windows has: no Visual C++ runtime DLLs.
+      # Nothing beyond what every Windows 10 and 11 has: no Visual C++
+      # runtime DLLs. (api-ms-win-crt-*, the Universal C Runtime, is part of
+      # Windows itself since 10.)
       - name: Needs nothing extra
         run: |
           $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
           $deps = & $dumpbin /nologo /dependents "$env:RUNNER_TEMP\stage\TypePalMaker.exe"
           $deps
-          $extra = $deps | Select-String -Pattern "vcruntime|msvcp|api-ms-win-crt|ucrtbase"
+          $extra = $deps | Select-String -Pattern "vcruntime|msvcp|concrt"
           if ($extra) { throw "still needs: $extra" }
 
       - name: Unzip and open it
