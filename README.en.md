@@ -11,15 +11,14 @@
 
 <h1 align="center">TypePal Maker</h1>
 
-<p align="center"><strong>An open-source desktop pet maker. Turn your own pictures into a Mac pet that reacts as you type.</strong></p>
+<p align="center"><strong>An open-source desktop pet maker. Turn your own pictures into a desktop pet that reacts as you type.</strong></p>
 
 <p align="center">
   <b>English</b> | <a href="./README.md">中文</a>
 </p>
 
 <p align="center">
-  <a href="#usage"><img src="https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black" alt="Pet Platform"></a>
-  <a href="#usage"><img src="https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue" alt="Maker Platform"></a>
+  <a href="#usage"><img src="https://img.shields.io/badge/platform-Web%20%7C%20Mac%20%7C%20Windows-blue" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License"></a>
 </p>
 

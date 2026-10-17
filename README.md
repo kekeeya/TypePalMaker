@@ -11,15 +11,14 @@
 
 <h1 align="center">TypePal Maker</h1>
 
-<p align="center"><strong>开源桌宠制作器，上传图片自由定制Mac打字桌宠</strong></p>
+<p align="center"><strong>开源桌宠制作器，上传图片自由定制打字桌宠</strong></p>
 
 <p align="center">
   <b>中文</b> | <a href="./README.en.md">English</a>
 </p>
 
 <p align="center">
-  <a href="#使用方法"><img src="https://img.shields.io/badge/pet%20platform-macOS%2013%2B-black" alt="Pet Platform"></a>
-  <a href="#使用方法"><img src="https://img.shields.io/badge/maker%20platform-Web%20%7C%20Mac-blue" alt="Maker Platform"></a>
+  <a href="#使用方法"><img src="https://img.shields.io/badge/platform-Web%20%7C%20Mac%20%7C%20Windows-blue" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License"></a>
 </p>
 
