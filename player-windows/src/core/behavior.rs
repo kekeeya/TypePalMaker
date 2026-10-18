@@ -9,26 +9,52 @@
 //! - When a round ends, a reaction still going on plays another: typing if a
 //!   key came in the round's second half, petting if the hand kept moving.
 //! - **idle** loops whenever nothing else is playing.
+//! - **Random actions**: a triggered reaction plays one of its actions instead
+//!   of its usual animation by each action's chance, rolled as the round
+//!   starts. Idle and sleep play each of theirs once every so often, as one
+//!   round, then loop as usual.
 //! - **sleep** loops once there has been no input for the pet's sleep delay;
 //!   any input wakes it.
 
+use std::collections::HashMap;
+
 use super::manifest::{PetManifest, PetState};
+
+/// What the behaviour needs to know of a random action.
+#[derive(Clone, Debug)]
+pub struct VariantInfo {
+    pub id: String,
+    /// Seconds one round of it lasts.
+    pub length: f64,
+    /// Looping reactions: seconds between plays, a random time in the range.
+    pub every: Option<(f64, f64)>,
+    /// Triggered reactions: the chance it plays instead of the usual animation.
+    pub chance: f64,
+}
 
 pub struct PetBehavior {
     /// Round length in seconds for each state that may be shown.
     lengths: [Option<f64>; 6],
+    /// Each state's random actions.
+    variants: [Vec<VariantInfo>; 6],
     /// Seconds without input before the pet sleeps, if it has a sleep state.
     sleep_after: Option<f64>,
     pub current: PetState,
     /// Bumped whenever a reaction starts, so the caller can tell a new round of
     /// the same reaction from the one already playing.
     pub round: u64,
+    /// The random action the round plays, if it is one.
+    pub variant: Option<String>,
     round_start: f64,
     round_length: f64,
     is_stroking: bool,
     last_key_at: f64,
     last_stroke_at: f64,
     last_activity_at: Option<f64>,
+    /// When each of a looping reaction's actions is next due.
+    due: HashMap<String, f64>,
+    /// A number in 0..1, uniformly; replaced in tests.
+    random: Box<dyn FnMut() -> f64>,
 }
 
 fn index(state: PetState) -> usize {
@@ -39,6 +65,23 @@ impl PetBehavior {
     pub fn new(manifest: &PetManifest) -> PetBehavior {
         let mut behavior = PetBehavior::with_lengths(|state| manifest.playable(state).map(|s| s.timeline_duration()));
         behavior.sleep_after = manifest.playable(PetState::Sleep).map(|s| s.sleep_after_minutes.unwrap_or(15.0) * 60.0);
+        for state in PetState::ALL {
+            let Some(spec) = manifest.playable(state) else { continue };
+            behavior.variants[index(state)] = spec
+                .variants
+                .iter()
+                .flatten()
+                .map(|v| VariantInfo {
+                    id: v.id.clone(),
+                    length: spec.playing(v).timeline_duration(),
+                    every: v.every.as_deref().and_then(|e| match e {
+                        [a, b] if *a > 0.0 && a <= b => Some((*a, *b)),
+                        _ => None,
+                    }),
+                    chance: v.chance.unwrap_or(0.0).max(0.0),
+                })
+                .collect();
+        }
         behavior
     }
 
@@ -47,15 +90,19 @@ impl PetBehavior {
     pub fn with_lengths(length: impl Fn(PetState) -> Option<f64>) -> PetBehavior {
         PetBehavior {
             lengths: PetState::ALL.map(length),
+            variants: Default::default(),
             sleep_after: None,
             current: PetState::Idle,
             round: 0,
+            variant: None,
             round_start: 0.0,
             round_length: 0.0,
             is_stroking: false,
             last_key_at: f64::NEG_INFINITY,
             last_stroke_at: f64::NEG_INFINITY,
             last_activity_at: None,
+            due: HashMap::new(),
+            random: Box::new(seeded_random()),
         }
     }
 
@@ -95,9 +142,14 @@ impl PetBehavior {
 
     /// Any input: it puts sleep off, and wakes a sleeping pet.
     pub fn activity(&mut self, time: f64) {
+        // The pet starts out idle without entering it: its actions are timed
+        // from the first sign of life.
+        if self.last_activity_at.is_none() && self.current == PetState::Idle {
+            self.enter(PetState::Idle, time);
+        }
         self.last_activity_at = Some(self.last_activity_at.map_or(time, |at| at.max(time)));
         if self.current == PetState::Sleep {
-            self.current = PetState::Idle;
+            self.enter(PetState::Idle, time);
             self.round = self.round.wrapping_add(1);
         }
     }
@@ -118,14 +170,50 @@ impl PetBehavior {
         Some((self.last_activity_at? + self.sleep_after?).max(time))
     }
 
+    /// When the soonest of the looping reaction's actions is due, if one
+    /// can play now (the reaction is playing as usual).
+    pub fn next_variant_deadline(&self, time: f64) -> Option<f64> {
+        if !self.current.loops() || self.variant.is_some() {
+            return None;
+        }
+        self.variants[index(self.current)].iter().filter_map(|v| self.due.get(&v.id)).copied().reduce(f64::min).map(|due| due.max(time))
+    }
+
+    /// Plays the looping reaction's action that is due, if one is, as one
+    /// round.
+    pub fn check_variants(&mut self, time: f64) {
+        if !self.current.loops() || self.variant.is_some() {
+            return;
+        }
+        let ready = self.variants[index(self.current)]
+            .iter()
+            .filter_map(|v| self.due.get(&v.id).map(|due| (v, *due)))
+            .filter(|(_, due)| *due <= time)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(v, _)| v.clone());
+        let Some(action) = ready else { return };
+        self.variant = Some(action.id);
+        self.round = self.round.wrapping_add(1);
+        self.round_start = time;
+        self.round_length = action.length;
+    }
+
     /// The reaction showing has played its last frame through.
     pub fn round_finished(&mut self, time: f64) {
-        if self.current == PetState::Idle {
+        if self.current.loops() {
+            // A looping reaction ends a round only when it was an action:
+            // back to the usual loop, and the action is due again later.
+            let Some(action) = self.variant.take() else { return };
+            self.round = self.round.wrapping_add(1);
+            if let Some(v) = self.variants[index(self.current)].iter().find(|v| v.id == action).cloned() {
+                self.schedule(&v, time);
+            }
+            self.check_inactivity(time);
             return;
         }
         let second_half = self.round_start + self.round_length / 2.0;
         let ended = self.current;
-        self.current = PetState::Idle;
+        self.enter(PetState::Idle, time);
         if self.is_stroking && (ended != PetState::Pet || self.last_stroke_at >= second_half) {
             self.start(PetState::Pet, time);
         }
@@ -135,13 +223,79 @@ impl PetBehavior {
         self.check_inactivity(time);
     }
 
-    /// Begins a round of `state`, if the pet has it.
+    /// Begins a round of `state`, if the pet has it. A triggered reaction
+    /// rolls for its random actions here.
     fn start(&mut self, state: PetState, time: f64) {
         let Some(length) = self.lengths[index(state)] else { return };
+        if state.loops() {
+            self.enter(state, time);
+            self.round = self.round.wrapping_add(1);
+            return;
+        }
         self.current = state;
+        self.variant = self.roll(state);
         self.round = self.round.wrapping_add(1);
         self.round_start = time;
-        self.round_length = length;
+        self.round_length = self
+            .variant
+            .as_ref()
+            .and_then(|id| self.variants[index(state)].iter().find(|v| &v.id == id))
+            .map_or(length, |v| v.length);
+    }
+
+    /// Goes to a looping reaction, playing as usual. Sleep's actions are
+    /// timed from now; idle's keep the times they had.
+    fn enter(&mut self, state: PetState, time: f64) {
+        self.current = state;
+        self.variant = None;
+        self.round_start = time;
+        self.round_length = self.lengths[index(state)].unwrap_or(0.0);
+        for v in self.variants[index(state)].clone() {
+            if state == PetState::Sleep || !self.due.contains_key(&v.id) {
+                self.schedule(&v, time);
+            }
+        }
+    }
+
+    fn schedule(&mut self, v: &VariantInfo, time: f64) {
+        match v.every {
+            Some((a, b)) => {
+                let due = time + a + (self.random)() * (b - a);
+                self.due.insert(v.id.clone(), due);
+            }
+            None => {
+                self.due.remove(&v.id);
+            }
+        }
+    }
+
+    /// One action by the chances, or none: a chance of 1 is always taken;
+    /// chances adding up to more than 1 are shared out in proportion.
+    fn roll(&mut self, state: PetState) -> Option<String> {
+        let total: f64 = self.variants[index(state)].iter().map(|v| v.chance).sum();
+        if total <= 0.0 {
+            return None;
+        }
+        let mut draw = (self.random)() * total.max(1.0);
+        for v in &self.variants[index(state)] {
+            if draw < v.chance {
+                return Some(v.id.clone());
+            }
+            draw -= v.chance;
+        }
+        None
+    }
+}
+
+/// Uniform numbers in 0..1 (xorshift), seeded from the clock: enough for
+/// when a pet stretches, with no crate for it.
+pub fn seeded_random() -> impl FnMut() -> f64 {
+    let mut x = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0x9e37_79b9, |d| d.as_nanos() as u64) | 1;
+    move || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        (x >> 11) as f64 / (1u64 << 53) as f64
     }
 }
 
@@ -304,6 +458,57 @@ mod tests {
         assert_eq!(b.next_sleep_deadline(0.0), None);
         b.check_inactivity(10_000.0);
         assert_eq!(b.current, Idle);
+    }
+
+    /// Idle with one action due every 60–120 s; typing with one at 25%.
+    fn with_actions(random: f64) -> PetBehavior {
+        let mut b = behavior(&[]);
+        b.variants[index(Idle)] = vec![VariantInfo { id: "stretch".into(), length: 0.2, every: Some((60.0, 120.0)), chance: 0.0 }];
+        b.variants[index(Typing)] = vec![VariantInfo { id: "fast".into(), length: 0.4, every: None, chance: 0.25 }];
+        b.random = Box::new(move || random);
+        b
+    }
+
+    #[test]
+    fn idle_plays_its_action_when_due_then_loops_as_usual() {
+        let mut b = with_actions(0.5);
+        b.activity(0.0);
+        // Typing in between keeps idle's time: 60 + 0.5 × 60 = 90 s.
+        b.key_pressed(1.0);
+        b.round_finished(1.4);
+        assert_eq!(b.next_variant_deadline(2.0), Some(90.0));
+        b.check_variants(50.0);
+        assert_eq!(b.variant, None);
+        let round = b.round;
+        b.check_variants(90.0);
+        assert_eq!(b.variant.as_deref(), Some("stretch"));
+        assert!(b.round > round);
+        assert_eq!(b.next_variant_deadline(91.0), None, "nothing else is due while it plays");
+        b.round_finished(90.2);
+        assert_eq!(b.current, Idle);
+        assert_eq!(b.variant, None);
+        assert_eq!(b.next_variant_deadline(91.0), Some(180.2));
+    }
+
+    #[test]
+    fn a_key_cuts_an_idle_action_short() {
+        let mut b = with_actions(0.0);
+        b.activity(0.0);
+        b.check_variants(60.0);
+        assert_eq!(b.variant.as_deref(), Some("stretch"));
+        b.key_pressed(60.05);
+        assert_eq!(b.current, Typing);
+    }
+
+    #[test]
+    fn typing_rolls_for_its_action() {
+        let mut low = with_actions(0.2);
+        low.key_pressed(0.0);
+        assert_eq!(low.variant.as_deref(), Some("fast"), "0.2 is under the 25% chance");
+        let mut high = with_actions(0.3);
+        high.key_pressed(0.0);
+        assert_eq!(high.variant, None);
+        assert_eq!(high.current, Typing);
     }
 
     #[test]

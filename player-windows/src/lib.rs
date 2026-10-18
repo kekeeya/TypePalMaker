@@ -13,6 +13,7 @@ pub mod core {
     pub mod layout;
     pub mod manifest;
     pub mod payload;
+    pub mod speech;
     pub mod stroke;
     pub mod timeline;
 }

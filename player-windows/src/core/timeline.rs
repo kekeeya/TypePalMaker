@@ -73,6 +73,8 @@ mod tests {
                 FrameTrack { id: "main".into(), name: String::new(), frames: vec![entry("base", Some(500.0))] },
             ]),
             sleep_after_minutes: None,
+            lines: None,
+            variants: None,
         };
         let timeline = SpriteTimeline::new(&spec);
         assert_eq!(timeline.length, 0.5);
@@ -86,7 +88,7 @@ mod tests {
 
     #[test]
     fn a_state_without_rows_is_one_row() {
-        let spec = StateSpec { enabled: true, fps: 4.0, looping: true, frames: vec![entry("a", None)], tracks: None, sleep_after_minutes: None };
+        let spec = StateSpec { enabled: true, fps: 4.0, looping: true, frames: vec![entry("a", None)], tracks: None, sleep_after_minutes: None, lines: None, variants: None };
         let timeline = SpriteTimeline::new(&spec);
         assert!(timeline.is_still());
         assert_eq!(timeline.frames_at(0.0).1, 0.25);

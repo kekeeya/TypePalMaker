@@ -19,6 +19,13 @@ pub struct DecodedFrame {
 }
 
 impl DecodedFrame {
+    /// The top row of visible artwork, in box pixels: where a speech bubble
+    /// points. `None` for a frame with nothing visible.
+    pub fn artwork_top(&self) -> Option<i32> {
+        let w = self.bitmap.width;
+        (0..self.bitmap.height).find(|&y| (0..w).any(|x| self.bitmap.alpha(x, y) > 24)).map(|row| self.y + row as i32)
+    }
+
     /// Whether a box-space pixel lands on visible artwork. A one-pixel ring
     /// of slack keeps antialiased edges from feeling slippery.
     pub fn is_opaque(&self, px: i32, py: i32) -> bool {

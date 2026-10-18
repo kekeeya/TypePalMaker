@@ -66,6 +66,20 @@ fn renders_every_screen() {
         }
     }
     set_language(Language::Chinese);
+
+    // Speech bubbles: one line, two, a long one cut short, and one below.
+    for (name, line, below) in [
+        ("bubble-short", "今天也要加油哦", false),
+        ("bubble-two-lines", "今天也要加油哦，做累了就休息一下…再坚持一会儿", false),
+        ("bubble-long", "Keep going today, and take a break when you are tired, then keep going", false),
+        ("bubble-below", "被你发现啦！", true),
+    ] {
+        let l = super::bubble::layout(line);
+        assert!(l.lines.len() <= 2, "{name}: {} lines", l.lines.len());
+        let mut c = Canvas::new(l.size.0, l.size.1, 2.0);
+        super::bubble::paint(&mut c, &l, l.size.0 * 0.75, below);
+        save(&c, name);
+    }
 }
 
 #[test]

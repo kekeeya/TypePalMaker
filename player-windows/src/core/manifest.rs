@@ -36,6 +36,11 @@ impl PetState {
     pub fn from_key(key: &str) -> Option<PetState> {
         PetState::ALL.into_iter().find(|s| s.key() == key)
     }
+
+    /// Idle and sleep loop; every other reaction plays once per trigger.
+    pub fn loops(self) -> bool {
+        self == PetState::Idle || self == PetState::Sleep
+    }
 }
 
 /// One frame in a state's sequence: which image, and for how long.
@@ -86,6 +91,41 @@ pub struct StateSpec {
     /// Sleep only: how long without any input before the pet falls asleep.
     #[serde(default)]
     pub sleep_after_minutes: Option<f64>,
+    /// Lines the pet may say when the reaction plays as usual.
+    #[serde(default)]
+    pub lines: Option<Vec<String>>,
+    #[serde(default)]
+    pub variants: Option<Vec<StateVariant>>,
+}
+
+/// A random action of a reaction: rows of its own, lines to say, and how
+/// often it comes. A looping reaction (idle, sleep) plays it once every
+/// `every` seconds, a random time in the range; any other plays it instead
+/// of its usual animation with probability `chance`. Rows with no pictures
+/// at all mean the usual animation.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct StateVariant {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub tracks: Vec<FrameTrack>,
+    #[serde(default)]
+    pub lines: Option<Vec<String>>,
+    #[serde(default)]
+    pub every: Option<Vec<f64>>,
+    #[serde(default)]
+    pub chance: Option<f64>,
+}
+
+impl StateVariant {
+    pub fn has_own_frames(&self) -> bool {
+        self.tracks.iter().any(|t| !t.frames.is_empty())
+    }
+
+    pub fn frames(&self) -> impl Iterator<Item = &FrameEntry> {
+        self.tracks.iter().flat_map(|t| t.frames.iter())
+    }
 }
 
 impl StateSpec {
@@ -114,7 +154,30 @@ impl StateSpec {
     /// How a state is played, whatever its file says: idle and sleep loop,
     /// every reaction plays once per trigger (see `PetBehavior`).
     pub fn played_as(&self, state: PetState) -> StateSpec {
-        StateSpec { looping: state == PetState::Idle || state == PetState::Sleep, ..self.clone() }
+        StateSpec { looping: state.loops(), ..self.clone() }
+    }
+
+    /// How a random action plays: once, on its own rows, or the usual ones
+    /// if it has no pictures.
+    pub fn playing(&self, variant: &StateVariant) -> StateSpec {
+        StateSpec {
+            looping: false,
+            frames: Vec::new(),
+            tracks: Some(if variant.has_own_frames() { variant.tracks.clone() } else { self.timeline_tracks() }),
+            lines: variant.lines.clone(),
+            variants: None,
+            ..self.clone()
+        }
+    }
+
+    pub fn variant(&self, id: Option<&str>) -> Option<&StateVariant> {
+        let id = id?;
+        self.variants.as_ref()?.iter().find(|v| v.id == id)
+    }
+
+    /// Every frame of its random actions.
+    pub fn variant_frames(&self) -> Vec<FrameEntry> {
+        self.variants.iter().flatten().flat_map(|v| v.frames().cloned()).collect()
     }
 }
 
@@ -190,7 +253,7 @@ impl PetManifest {
         PetState::ALL
             .into_iter()
             .filter_map(|s| self.playable(s))
-            .flat_map(|spec| spec.all_frames().into_iter().map(|f| f.id))
+            .flat_map(|spec| spec.all_frames().into_iter().chain(spec.variant_frames()).map(|f| f.id))
             .collect()
     }
 
@@ -217,7 +280,7 @@ impl PetManifest {
             if !(spec.fps > 0.0) {
                 return Err(Bilingual::new(format!("状态 {key} 的 fps 必须大于 0"), format!("State {key} needs an fps greater than 0")));
             }
-            for entry in &frames {
+            for entry in frames.iter().chain(&spec.variant_frames()) {
                 if !self.frames.contains_key(&entry.id) {
                     let id = &entry.id;
                     return Err(Bilingual::new(
@@ -301,6 +364,30 @@ mod tests {
     }
 
     #[test]
+    fn reads_random_actions_and_lines() {
+        let json = r#"{
+          "schemaVersion": 1, "name": "Cat", "id": "cat", "display": { "height": 160 },
+          "frames": { "a": { "file": "a.png" }, "s": { "file": "s.png" } },
+          "states": {
+            "idle": { "enabled": true, "fps": 8, "loop": true, "frames": ["a"], "lines": ["hi"],
+                      "variants": [{ "id": "v", "name": "伸懒腰", "lines": ["好困…"], "every": [60, 180],
+                                     "tracks": [{ "id": "fx", "name": "", "frames": ["s"] }, { "id": "main", "name": "", "frames": ["a"] }] },
+                                   { "id": "w", "name": "空", "tracks": [{ "id": "main", "name": "", "frames": [] }] }] }
+          }
+        }"#;
+        let manifest = PetManifest::load(json.as_bytes()).unwrap();
+        assert_eq!(manifest.used_frame_ids().len(), 2);
+        let idle = manifest.playable(PetState::Idle).unwrap();
+        assert_eq!(idle.lines.as_deref(), Some(&["hi".to_string()][..]));
+        let v = idle.variant(Some("v")).unwrap();
+        assert_eq!(v.every.as_deref(), Some(&[60.0, 180.0][..]));
+        assert_eq!(idle.playing(v).timeline_tracks().len(), 2);
+        // An action with no pictures plays the usual rows.
+        let empty = idle.variant(Some("w")).unwrap();
+        assert_eq!(idle.playing(empty).timeline_tracks()[0].frames.len(), 1);
+    }
+
+    #[test]
     fn a_missing_row_frame_is_rejected() {
         let json = r#"{
           "schemaVersion": 1, "name": "Cat", "id": "cat", "display": { "height": 160 },
@@ -313,7 +400,7 @@ mod tests {
 
     #[test]
     fn only_idle_and_sleep_loop() {
-        let spec = StateSpec { enabled: true, fps: 10.0, looping: false, frames: vec![], tracks: None, sleep_after_minutes: None };
+        let spec = StateSpec { enabled: true, fps: 10.0, looping: false, frames: vec![], tracks: None, sleep_after_minutes: None, lines: None, variants: None };
         for state in PetState::ALL {
             assert_eq!(spec.played_as(state).looping, state == PetState::Idle || state == PetState::Sleep);
         }

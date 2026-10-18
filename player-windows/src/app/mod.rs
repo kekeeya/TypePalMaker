@@ -7,6 +7,7 @@
 //! busy (sent back synchronously by one of its own calls) is left to Windows,
 //! so state is never borrowed twice.
 
+mod bubble;
 mod policy;
 mod popup;
 mod settings_window;
@@ -31,6 +32,7 @@ use crate::core::behavior::PetBehavior;
 use crate::core::frames::{DecodedFrame, FrameStore};
 use crate::core::manifest::{PetManifest, PetState};
 use crate::core::payload::PetSource;
+use crate::core::speech::PetSpeech;
 use crate::core::stroke::{STROKE_LAPSE, StrokeRecognizer};
 use crate::core::timeline::SpriteTimeline;
 use crate::prefs::{Position, Preferences, settings_path};
@@ -53,6 +55,10 @@ const TIMER_HOUSEKEEPING: usize = 6;
 const TIMER_REST: usize = 7;
 /// Fires when the pet is due to fall asleep, if no input comes first.
 const TIMER_SLEEP: usize = 8;
+/// Fires when idle's or sleep's next random action is due.
+const TIMER_VARIANT: usize = 9;
+/// Takes the speech bubble away when its line has been up long enough.
+const TIMER_BUBBLE: usize = 10;
 
 /// How often to look at the keyboard. What is read is a timestamp, so polling
 /// only adds latency to noticing, never error to when (as on macOS).
@@ -102,6 +108,12 @@ pub struct App {
     store: FrameStore,
     behavior: PetBehavior,
     shown_round: u64,
+    /// What the animation was last told to show, to tell a new reaction and a
+    /// random action starting or ending apart.
+    shown_state: Option<PetState>,
+    shown_variant: Option<String>,
+    speech: PetSpeech,
+    bubble: Option<bubble::Bubble>,
     stroke: StrokeRecognizer,
     prefs: Preferences,
     prefs_path: PathBuf,
@@ -199,6 +211,7 @@ pub fn run() {
     let pet_class = register_class("TypePalPet", pet_proc, false);
     settings_window::register();
     popup::register();
+    bubble::register();
     policy::register();
 
     let name = wide(&manifest.name);
@@ -243,6 +256,10 @@ pub fn run() {
         source,
         store,
         shown_round: u64::MAX,
+        shown_state: None,
+        shown_variant: None,
+        speech: PetSpeech::new(crate::core::behavior::seeded_random()),
+        bubble: None,
         stroke: StrokeRecognizer::default(),
         prefs,
         prefs_path,
@@ -386,10 +403,12 @@ impl App {
             self.show_frame();
         } else {
             self.stop_input();
+            self.hide_bubble();
             self.animation.paused = true;
             unsafe {
                 KillTimer(self.pet, TIMER_FRAME);
                 KillTimer(self.host, TIMER_SLEEP);
+                KillTimer(self.host, TIMER_VARIANT);
                 SetTimer(self.host, TIMER_REST, 60_000, None);
             }
         }
@@ -700,20 +719,82 @@ impl App {
     /// frame; the round already playing carries on untouched.
     fn refresh(&mut self) {
         self.schedule_sleep();
+        self.schedule_variant();
         let state = self.behavior.current;
         let Some(spec) = self.manifest.playable(state) else { return };
         let new_round = self.behavior.round != self.shown_round;
+        let entered = Some(state) != self.shown_state;
+        let variant = spec.variant(self.behavior.variant.as_deref());
+        // Idle carries on across rounds, except into and out of an action.
+        let restart = new_round && (state != PetState::Idle || self.behavior.variant != self.shown_variant);
+        let pool = if new_round || entered { PetSpeech::pool(state, spec, variant, entered) } else { Vec::new() };
+        let played = match variant {
+            Some(v) => spec.playing(v),
+            None => spec.played_as(state),
+        };
         self.shown_round = self.behavior.round;
-        let restart = new_round && state != PetState::Idle;
-        if Some(state) == self.animation.state && !restart {
+        self.shown_state = Some(state);
+        self.shown_variant = self.behavior.variant.clone();
+        if Some(state) != self.animation.state || restart {
+            self.animation.state = Some(state);
+            self.animation.timeline = Some(SpriteTimeline::new(&played));
+            self.animation.looping = played.looping;
+            self.animation.elapsed = 0.0;
+            self.show_frame();
+        }
+        self.speak(&pool);
+    }
+
+    /// Arms the timer for idle's or sleep's next random action.
+    fn schedule_variant(&mut self) {
+        let now = self.now();
+        match self.behavior.next_variant_deadline(now) {
+            Some(deadline) if self.input_active => {
+                let ms = ((deadline - now + 0.01) * 1000.0).ceil().min(i32::MAX as f64) as u32;
+                unsafe { SetTimer(self.host, TIMER_VARIANT, ms, None) };
+            }
+            _ => unsafe {
+                KillTimer(self.host, TIMER_VARIANT);
+            },
+        }
+    }
+
+    fn on_variant_timer(&mut self) {
+        let now = self.now();
+        self.behavior.check_variants(now);
+        self.refresh();
+    }
+
+    /// A line from `pool`, in a bubble over the pet's head; only while the
+    /// pet can be seen, and only as often as `PetSpeech` allows.
+    fn speak(&mut self, pool: &[String]) {
+        if pool.is_empty() || !self.input_active {
             return;
         }
-        let spec = spec.played_as(state);
-        self.animation.state = Some(state);
-        self.animation.timeline = Some(SpriteTimeline::new(&spec));
-        self.animation.looping = spec.looping;
-        self.animation.elapsed = 0.0;
-        self.show_frame();
+        let now = self.now();
+        let Some(line) = self.speech.say(pool, now) else { return };
+        self.hide_bubble();
+        self.bubble = bubble::Bubble::new(self.pet, &line, self.scale);
+        self.place_bubble();
+        let ms = (PetSpeech::duration(&line) * 1000.0) as u32;
+        unsafe { SetTimer(self.host, TIMER_BUBBLE, ms, None) };
+    }
+
+    /// Points the bubble at the top of the artwork showing.
+    fn place_bubble(&mut self) {
+        let (w, h) = self.size;
+        let top = self.current.iter().filter_map(|f| f.artwork_top()).min().unwrap_or(0);
+        let tip = (self.pos.0 + (w as f32 * 0.62) as i32, self.pos.1 + top + (4.0 * self.scale) as i32);
+        if let Some(b) = self.bubble.as_mut() {
+            b.place(tip, self.pos.1 + h);
+        }
+    }
+
+    fn hide_bubble(&mut self) {
+        unsafe { KillTimer(self.host, TIMER_BUBBLE) };
+        if let Some(b) = self.bubble.take() {
+            b.destroy();
+        }
     }
 
     /// Arms the sleep timer for when an idle pet is due to fall asleep.
@@ -822,6 +903,7 @@ impl App {
 
     /// Grows and shrinks about the bottom centre, where the pet stands.
     fn resize(&mut self) {
+        self.hide_bubble();
         let (old_w, old_h) = self.size;
         let (bottom, center) = (self.pos.1 + old_h, self.pos.0 + old_w / 2);
         self.configure_size();
@@ -902,6 +984,7 @@ impl App {
             if let Some(dib) = self.dib.as_ref() {
                 dib.present(self.pet, self.pos.0, self.pos.1);
             }
+            self.place_bubble();
             return;
         }
         if !self.tracking_leave {
@@ -1084,6 +1167,12 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     }
                     TIMER_SLEEP => {
                         with_app(|app| app.on_sleep_timer());
+                    }
+                    TIMER_VARIANT => {
+                        with_app(|app| app.on_variant_timer());
+                    }
+                    TIMER_BUBBLE => {
+                        with_app(|app| app.hide_bubble());
                     }
                     TIMER_REST => {
                         KillTimer(hwnd, TIMER_REST);
