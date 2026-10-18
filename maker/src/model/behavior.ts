@@ -188,12 +188,10 @@ function cellsOf(spec: StateSpec, action: StateVariant): number {
 
 /**
  * What the pet says, and when: one bubble at a time, up for a while that
- * grows with the line, then at least `SPEECH_GAP` seconds of quiet. A line
- * due in the quiet is not said at all. A pool does not give the same line
+ * grows with the line; the next can come as soon as it has gone. A line due
+ * while one is up is not said at all. A pool does not give the same line
  * twice running. Port of `PetSpeech.swift`.
  */
-export const SPEECH_GAP = 10;
-
 export class PetSpeech {
   private quietUntil = -Infinity;
   private lastLine: string | null = null;
@@ -213,14 +211,14 @@ export class PetSpeech {
     return loops(state) ? [] : (spec.lines ?? []);
   }
 
-  /** A line to say now, or null: nothing to say, or too soon after the last. */
+  /** A line to say now, or null: nothing to say, or the last still up. */
   say(pool: string[], time: number): string | null {
     const lines = pool.filter(Boolean);
     if (!lines.length || time < this.quietUntil) return null;
     const choices = lines.length > 1 ? lines.filter((l) => l !== this.lastLine) : lines;
     const line = choices[Math.min(choices.length - 1, Math.floor(this.random() * choices.length))];
     this.lastLine = line;
-    this.quietUntil = time + PetSpeech.duration(line) + SPEECH_GAP;
+    this.quietUntil = time + PetSpeech.duration(line);
     return line;
   }
 }

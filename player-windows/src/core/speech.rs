@@ -1,13 +1,10 @@
 //! What the pet says, and when. A port of
 //! `player/Sources/TypePalCore/PetSpeech.swift`: one bubble at a time, on
-//! screen for a while that grows with the line, then at least `GAP` seconds
-//! of quiet. A line due in the quiet is not said at all; nothing queues up. A
-//! pool does not give the same line twice running.
+//! screen for a while that grows with the line; the next can come as soon as
+//! it has gone. A line due while one is up is not said at all; nothing queues
+//! up. A pool does not give the same line twice running.
 
 use super::manifest::{PetState, StateSpec, StateVariant};
-
-/// Quiet between two bubbles, from the end of one to the start of the next.
-pub const GAP: f64 = 10.0;
 
 pub struct PetSpeech {
     quiet_until: f64,
@@ -36,7 +33,7 @@ impl PetSpeech {
         if state.loops() { Vec::new() } else { spec.lines.clone().unwrap_or_default() }
     }
 
-    /// A line to say now, or `None`: nothing to say, or too soon after the last.
+    /// A line to say now, or `None`: nothing to say, or the last still up.
     pub fn say(&mut self, pool: &[String], time: f64) -> Option<String> {
         let lines: Vec<&String> = pool.iter().filter(|l| !l.is_empty()).collect();
         if lines.is_empty() || time < self.quiet_until {
@@ -46,7 +43,7 @@ impl PetSpeech {
             if lines.len() > 1 { lines.iter().copied().filter(|l| Some(*l) != self.last_line.as_ref()).collect() } else { lines };
         let i = (((self.random)() * choices.len() as f64) as usize).min(choices.len() - 1);
         let line = choices[i].clone();
-        self.quiet_until = time + PetSpeech::duration(&line) + GAP;
+        self.quiet_until = time + PetSpeech::duration(&line);
         self.last_line = Some(line.clone());
         Some(line)
     }
@@ -58,13 +55,13 @@ mod tests {
     use crate::core::manifest::FrameEntry;
 
     #[test]
-    fn keeps_quiet_and_does_not_repeat() {
+    fn takes_turns_and_does_not_repeat() {
         let mut speech = PetSpeech::new(|| 0.0);
         let pool = vec!["a".to_string(), "b".to_string()];
         assert_eq!(speech.say(&pool, 0.0).as_deref(), Some("a"));
-        // "a" is up for 2.5 s, then 10 s of quiet.
-        assert_eq!(speech.say(&pool, 12.0), None);
-        assert_eq!(speech.say(&pool, 12.5).as_deref(), Some("b"));
+        // "a" is up for 2.5 s; the next can come as soon as it has gone.
+        assert_eq!(speech.say(&pool, 2.0), None);
+        assert_eq!(speech.say(&pool, 2.5).as_deref(), Some("b"));
         assert_eq!(speech.say(&[], 100.0), None);
         assert_eq!(PetSpeech::duration(&"字".repeat(30)), 6.0);
     }

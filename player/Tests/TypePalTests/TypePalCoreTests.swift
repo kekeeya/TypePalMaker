@@ -402,12 +402,12 @@ final class RandomActionTests: XCTestCase {
         XCTAssertEqual(high.current, .typing)
     }
 
-    func testSpeechKeepsQuietAndDoesNotRepeat() {
+    func testSpeechTakesTurnsAndDoesNotRepeat() {
         var speech = PetSpeech { 0 }
         XCTAssertEqual(speech.say(from: ["a", "b"], at: 0), "a")
-        // "a" is up for 2.5 s, then 10 s of quiet.
-        XCTAssertNil(speech.say(from: ["a", "b"], at: 12))
-        XCTAssertEqual(speech.say(from: ["a", "b"], at: 12.5), "b")
+        // "a" is up for 2.5 s; the next can come as soon as it has gone.
+        XCTAssertNil(speech.say(from: ["a", "b"], at: 2))
+        XCTAssertEqual(speech.say(from: ["a", "b"], at: 2.5), "b")
         XCTAssertNil(speech.say(from: [], at: 100))
         XCTAssertEqual(PetSpeech.duration(of: String(repeating: "字", count: 30)), 6)
     }

@@ -383,11 +383,11 @@ describe("random actions and speech (as the Swift tests)", () => {
     expect([high.current, high.variant]).toEqual(["typing", null]);
   });
 
-  it("speech keeps quiet and does not repeat", () => {
+  it("speech takes turns and does not repeat", () => {
     const speech = new PetSpeech(() => 0);
     expect(speech.say(["a", "b"], 0)).toBe("a");
-    expect(speech.say(["a", "b"], 12)).toBeNull();
-    expect(speech.say(["a", "b"], 12.5)).toBe("b");
+    expect(speech.say(["a", "b"], 2)).toBeNull();
+    expect(speech.say(["a", "b"], 2.5)).toBe("b");
     expect(PetSpeech.duration("字".repeat(30))).toBe(6);
   });
 });
