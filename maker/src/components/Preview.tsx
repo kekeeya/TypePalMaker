@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useT } from "../i18n/useT";
-import { PetBehavior, playedAs, StrokeRecognizer, StrokeTuning } from "../model/behavior";
+import { PetBehavior, PetSpeech, playedAs, StrokeRecognizer, StrokeTuning } from "../model/behavior";
 import { fitRect } from "../model/placement";
 import { entryAtCell } from "../model/timeline";
-import { PET_STATES, timelineTracks, type FrameAsset, type PetState, type Project } from "../model/types";
+import { PET_STATES, timelineTracks, variantRows, type FrameAsset, type PetState, type Project } from "../model/types";
 import { playable } from "../model/validate";
 import { useEditor } from "../store";
 import { FrameStack, useTimelinePlayer } from "./Sprite";
@@ -22,59 +22,101 @@ export function Preview({ project }: { project: Project }) {
 
   const behavior = useMemo(() => new PetBehavior((s) => playable(project, s)), [project]);
   const stroke = useRef(new StrokeRecognizer());
-  const [shown, setShown] = useState<{ state: PetState; round: number }>({ state: "idle", round: 0 });
+  const [shown, setShown] = useState<{ state: PetState; round: number; variant: string | null }>({ state: "idle", round: 0, variant: null });
   const state = shown.state;
   const settle = useRef<number | undefined>(undefined);
   const sleepTimer = useRef<number | undefined>(undefined);
+  const variantTimer = useRef<number | undefined>(undefined);
+  const speech = useRef(new PetSpeech());
+  const [line, setLine] = useState<string | null>(null);
+  const lineTimer = useRef<number | undefined>(undefined);
 
   /** Shows what the behaviour decided: a new round plays from its first
    *  frame, the round already playing carries on — as in the runtime. */
   const refresh = useCallback(
     () =>
       setShown((s) =>
-        s.state === behavior.current && s.round === behavior.round ? s : { state: behavior.current, round: behavior.round },
+        s.state === behavior.current && s.round === behavior.round
+          ? s
+          : { state: behavior.current, round: behavior.round, variant: behavior.variant },
       ),
     [behavior],
   );
 
-  const armSleep = useCallback(() => {
+  /** Arms the timers for falling asleep and for idle's or sleep's next
+   *  random action. */
+  const armTimers = useCallback(() => {
     window.clearTimeout(sleepTimer.current);
+    window.clearTimeout(variantTimer.current);
     const current = now();
-    const deadline = behavior.nextSleepDeadline(current);
-    if (deadline === null) return;
-    sleepTimer.current = window.setTimeout(() => {
-      behavior.checkInactivity(now());
-      refresh();
-    }, Math.max(0, deadline - current) * 1000 + 10);
+    const asleep = behavior.nextSleepDeadline(current);
+    if (asleep !== null) {
+      sleepTimer.current = window.setTimeout(() => {
+        behavior.checkInactivity(now());
+        refresh();
+        armTimers();
+      }, Math.max(0, asleep - current) * 1000 + 10);
+    }
+    const action = behavior.nextVariantDeadline(current);
+    if (action !== null) {
+      variantTimer.current = window.setTimeout(() => {
+        behavior.checkVariants(now());
+        refresh();
+        armTimers();
+      }, Math.max(0, action - current) * 1000 + 10);
+    }
   }, [behavior, refresh]);
 
   useEffect(() => {
     behavior.activity(now());
-    armSleep();
+    armTimers();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") return close(false);
       behavior.keyPressed(now());
       refresh();
-      armSleep();
+      armTimers();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.clearTimeout(settle.current);
       window.clearTimeout(sleepTimer.current);
+      window.clearTimeout(variantTimer.current);
+      window.clearTimeout(lineTimer.current);
       alphaCache.clear();
     };
-  }, [behavior, refresh, close, armSleep]);
+  }, [behavior, refresh, close, armTimers]);
 
   const own = playable(project, state);
-  // Memoised per round: a fresh object would read as a new round.
-  const spec = useMemo(() => (own ? playedAs(own, state) : null), [own, state]);
+  const action = own?.variants?.find((v) => v.id === shown.variant);
+  // Memoised per round: a fresh object would read as a new round. A random
+  // action plays once, then the reaction loops as usual again.
+  const spec = useMemo(
+    () => (own ? (action ? { ...own, loop: false, frames: [], tracks: variantRows(own, action) } : playedAs(own, state)) : null),
+    [own, action, state],
+  );
+
+  // What a new round or a new reaction says, as the runtime decides it.
+  const spoken = useRef<{ state: PetState | null; round: number }>({ state: null, round: -1 });
+  useEffect(() => {
+    if (!own) return;
+    const entered = spoken.current.state !== state;
+    const newRound = spoken.current.round !== shown.round;
+    spoken.current = { state, round: shown.round };
+    if (!entered && !newRound) return;
+    const said = speech.current.say(PetSpeech.pool(state, own, action, entered), now());
+    if (!said) return;
+    setLine(said);
+    window.clearTimeout(lineTimer.current);
+    lineTimer.current = window.setTimeout(() => setLine(null), PetSpeech.duration(said) * 1000);
+  }, [own, action, state, shown.round]);
+
   const cell = useTimelinePlayer(spec, {
-    restartKey: state === "idle" ? "idle" : shown.round,
+    restartKey: state === "idle" && !action ? "idle" : shown.round,
     onFinished: () => {
       behavior.roundFinished(now());
       refresh();
-      armSleep();
+      armTimers();
     },
   });
   const visibleFrames = spec
@@ -112,16 +154,16 @@ export function Preview({ project }: { project: Project }) {
             if (onPet(e)) {
               behavior.tapped(now());
               refresh();
-              armSleep();
+              armTimers();
             } else {
               behavior.mouseClicked(now());
               refresh();
-              armSleep();
+              armTimers();
             }
           }}
           onMouseMove={(e) => {
             behavior.activity(now());
-            armSleep();
+            armTimers();
             const r = stroke.current;
             if (e.buttons !== 0) r.reset();
             else r.track(e.screenX, onPet(e), now());
@@ -141,13 +183,14 @@ export function Preview({ project }: { project: Project }) {
           }}
         >
           <div ref={petRef} className="pet-box" style={{ width: box.width, height: box.height }}>
+            {line && <div className="line-bubble preview-bubble"><b>{line}</b></div>}
             {PET_STATES.map((s) => {
               const own = playable(project, s);
               if (!own) return null;
-              const tracks = timelineTracks(own);
+              const tracks = s === state && spec ? timelineTracks(spec) : timelineTracks(own);
               return tracks.map((track, trackIndex) => (
                 <FrameStack
-                  key={`${s}-${track.id}`}
+                  key={`${s}-${trackIndex}-${track.id}`}
                   frames={project.frames}
                   entries={track.frames}
                   shown={s === state ? entryAtCell(track, project.fps, cell)?.index ?? -1 : -1}

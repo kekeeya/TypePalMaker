@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PetBehavior, playedAs, StrokeRecognizer, StrokeTuning } from "./behavior";
+import { PetBehavior, PetSpeech, playedAs, StrokeRecognizer, StrokeTuning } from "./behavior";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fitRect } from "./placement";
 import { decodeProject, encodeProject } from "./projectFile";
@@ -341,5 +341,50 @@ describe("built-in effects", () => {
     expect(effectOfRow("effect-heart-k3x9")).toBe("heart");
     expect(effectOfRow("main")).toBeUndefined();
     expect(effectOfRow("track-1a2b")).toBeUndefined();
+  });
+});
+
+describe("random actions and speech (as the Swift tests)", () => {
+  const f = [{ id: "f" }];
+  const spec = (state: PetState): StateSpec | null =>
+    state === "idle"
+      ? { enabled: true, fps: 10, loop: true, frames: f, tracks: [{ id: "main", name: "", frames: f }],
+          variants: [{ id: "stretch", name: "", tracks: [{ id: "main", name: "", frames: [...f, ...f] }], lines: ["好困…"], every: [60, 120] }] }
+      : state === "typing"
+        ? { enabled: true, fps: 10, loop: false, frames: f, tracks: [{ id: "main", name: "", frames: f }],
+            variants: [{ id: "fast", name: "", tracks: [], lines: [], chance: 0.25 }] }
+        : null;
+
+  it("idle plays its action when due, then loops as usual", () => {
+    const b = new PetBehavior(spec, () => 0.5);
+    b.activity(0);
+    b.keyPressed(1);
+    b.roundFinished(1.1);
+    expect(b.nextVariantDeadline(2)).toBe(90);
+    b.checkVariants(50);
+    expect(b.variant).toBeNull();
+    b.checkVariants(90);
+    expect(b.variant).toBe("stretch");
+    expect(b.nextVariantDeadline(91)).toBeNull();
+    b.roundFinished(90.2);
+    expect([b.current, b.variant]).toEqual(["idle", null]);
+    expect(b.nextVariantDeadline(91)).toBeCloseTo(180.2);
+  });
+
+  it("typing rolls for its action", () => {
+    const low = new PetBehavior(spec, () => 0.2);
+    low.keyPressed(0);
+    expect(low.variant).toBe("fast");
+    const high = new PetBehavior(spec, () => 0.3);
+    high.keyPressed(0);
+    expect([high.current, high.variant]).toEqual(["typing", null]);
+  });
+
+  it("speech keeps quiet and does not repeat", () => {
+    const speech = new PetSpeech(() => 0);
+    expect(speech.say(["a", "b"], 0)).toBe("a");
+    expect(speech.say(["a", "b"], 12)).toBeNull();
+    expect(speech.say(["a", "b"], 12.5)).toBe("b");
+    expect(PetSpeech.duration("字".repeat(30))).toBe(6);
   });
 });
