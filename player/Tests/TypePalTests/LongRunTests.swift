@@ -10,7 +10,9 @@ final class LongRunTests: XCTestCase {
     }
 
     func testThirtyDaysOfEventsStayBoundedAndSettle() {
-        var behavior = PetBehavior { _ in self.spec(loop: false) }
+        // Without sleep, which a quiet stretch at the end would rightly start
+        // (its timing has its own tests).
+        var behavior = PetBehavior { $0 == .sleep ? nil : self.spec(loop: false) }
         var stroke = StrokeRecognizer()
         var rng = SystemRandomNumberGenerator()
 

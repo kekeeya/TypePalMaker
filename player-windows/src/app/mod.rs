@@ -29,9 +29,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::core::behavior::PetBehavior;
 use crate::core::frames::{DecodedFrame, FrameStore};
-use crate::core::manifest::{PetManifest, PetState, StateSpec};
+use crate::core::manifest::{PetManifest, PetState};
 use crate::core::payload::PetSource;
 use crate::core::stroke::{STROKE_LAPSE, StrokeRecognizer};
+use crate::core::timeline::SpriteTimeline;
 use crate::prefs::{Position, Preferences, settings_path};
 use crate::strings;
 use win32::*;
@@ -50,6 +51,8 @@ const TIMER_TRIM: usize = 5;
 const TIMER_HOUSEKEEPING: usize = 6;
 /// A minute after the pet stops being seen, it gives back all it can.
 const TIMER_REST: usize = 7;
+/// Fires when the pet is due to fall asleep, if no input comes first.
+const TIMER_SLEEP: usize = 8;
 
 /// How often to look at the keyboard. What is read is a timestamp, so polling
 /// only adds latency to noticing, never error to when (as on macOS).
@@ -74,10 +77,15 @@ fn with_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
     Some(result)
 }
 
+/// The state playing, as rows on one clock (see `SpriteTimeline`).
 struct Animation {
     state: Option<PetState>,
-    spec: Option<StateSpec>,
-    index: usize,
+    timeline: Option<SpriteTimeline>,
+    looping: bool,
+    /// Seconds into the round.
+    elapsed: f64,
+    /// When the frame showing ends, in seconds into the round.
+    boundary: f64,
     paused: bool,
 }
 
@@ -108,7 +116,8 @@ pub struct App {
     size: (i32, i32),
     dib: Option<Dib>,
     animation: Animation,
-    current: Option<Rc<DecodedFrame>>,
+    /// The frames showing, bottom row first.
+    current: Vec<Rc<DecodedFrame>>,
     drag: Option<Drag>,
     tracking_leave: bool,
 
@@ -244,8 +253,8 @@ pub fn run() {
         pos: (0, 0),
         size: (1, 1),
         dib: None,
-        animation: Animation { state: None, spec: None, index: 0, paused: true },
-        current: None,
+        animation: Animation { state: None, timeline: None, looping: true, elapsed: 0.0, boundary: 0.0, paused: true },
+        current: Vec::new(),
         drag: None,
         tracking_leave: false,
         input_active: false,
@@ -369,12 +378,18 @@ impl App {
             unsafe { KillTimer(self.host, TIMER_REST) };
             self.start_input();
             self.animation.paused = false;
+            // Coming back to the pet is activity: it wakes, and sleep waits
+            // its full delay again.
+            let now = self.now();
+            self.behavior.activity(now);
+            self.refresh();
             self.show_frame();
         } else {
             self.stop_input();
             self.animation.paused = true;
             unsafe {
                 KillTimer(self.pet, TIMER_FRAME);
+                KillTimer(self.host, TIMER_SLEEP);
                 SetTimer(self.host, TIMER_REST, 60_000, None);
             }
         }
@@ -637,6 +652,16 @@ impl App {
             return;
         }
         self.last_mouse_tick = message_time;
+        // Every move anywhere is activity. Cheap on purpose, as it runs for
+        // each move: the time is noted, and only a sleeping pet is woken.
+        // The sleep timer is not moved; if it fires early, it re-arms for
+        // the deadline the latest activity set.
+        let asleep = self.behavior.current == PetState::Sleep;
+        let now = self.now();
+        self.behavior.activity(now);
+        if asleep {
+            self.refresh();
+        }
         let flags = unsafe { raw.data.mouse.Anonymous.Anonymous.usButtonFlags } as u32;
         let downs = RI_MOUSE_LEFT_BUTTON_DOWN
             | RI_MOUSE_RIGHT_BUTTON_DOWN
@@ -674,53 +699,82 @@ impl App {
     /// Shows what the behaviour has decided: a new round starts from its first
     /// frame; the round already playing carries on untouched.
     fn refresh(&mut self) {
+        self.schedule_sleep();
         let state = self.behavior.current;
-        let Some(spec) = self.manifest.playable(state).cloned() else { return };
+        let Some(spec) = self.manifest.playable(state) else { return };
         let new_round = self.behavior.round != self.shown_round;
         self.shown_round = self.behavior.round;
         let restart = new_round && state != PetState::Idle;
         if Some(state) == self.animation.state && !restart {
             return;
         }
+        let spec = spec.played_as(state);
         self.animation.state = Some(state);
-        self.animation.spec = Some(spec.played_as(state));
-        self.animation.index = 0;
+        self.animation.timeline = Some(SpriteTimeline::new(&spec));
+        self.animation.looping = spec.looping;
+        self.animation.elapsed = 0.0;
         self.show_frame();
     }
 
-    /// Shows the current frame and arms one timer for exactly its duration. A
-    /// single looping frame arms none, which keeps an idle pet at ~0% CPU.
+    /// Arms the sleep timer for when an idle pet is due to fall asleep.
+    fn schedule_sleep(&mut self) {
+        let now = self.now();
+        match self.behavior.next_sleep_deadline(now) {
+            Some(deadline) if self.input_active => {
+                let ms = ((deadline - now + 0.01) * 1000.0).ceil().min(i32::MAX as f64) as u32;
+                unsafe { SetTimer(self.host, TIMER_SLEEP, ms, None) };
+            }
+            _ => unsafe {
+                KillTimer(self.host, TIMER_SLEEP);
+            },
+        }
+    }
+
+    fn on_sleep_timer(&mut self) {
+        let now = self.now();
+        self.behavior.check_inactivity(now);
+        self.refresh();
+    }
+
+    /// Shows the frames of the moment and arms one timer for exactly the next
+    /// change. A single looping frame arms none, which keeps an idle pet at
+    /// ~0% CPU.
     fn show_frame(&mut self) {
         unsafe { KillTimer(self.pet, TIMER_FRAME) };
-        let Some(spec) = self.animation.spec.clone() else { return };
-        let Some(entry) = spec.frames.get(self.animation.index) else { return };
-        if let Some(frame) = self.store.frame(&entry.id, &self.source) {
-            self.current = Some(frame);
+        let Some(timeline) = self.animation.timeline.as_ref() else { return };
+        let (entries, next) = timeline.frames_at(self.animation.elapsed);
+        // The first row is drawn over the others.
+        let ids: Vec<String> = entries.iter().rev().flatten().map(|e| e.id.clone()).collect();
+        let still = timeline.is_still() && self.animation.looping;
+        let length = timeline.length;
+        let frames: Vec<_> = ids.iter().filter_map(|id| self.store.frame(id, &self.source)).collect();
+        // A frame that cannot be read leaves the last picture up.
+        if !frames.is_empty() || ids.is_empty() {
+            self.current = frames;
             self.render();
         }
-        if self.animation.paused || (spec.frames.len() == 1 && spec.looping) {
+        if self.animation.paused || still || length <= 0.0 {
             return;
         }
-        let seconds = spec.durations()[self.animation.index].max(1.0 / 60.0);
+        self.animation.boundary = next;
+        let seconds = (next - self.animation.elapsed).max(1.0 / 60.0);
         unsafe { SetTimer(self.pet, TIMER_FRAME, (seconds * 1000.0).round() as u32, None) };
     }
 
     fn advance(&mut self) {
-        let Some(spec) = self.animation.spec.clone() else { return };
-        if self.animation.index + 1 >= spec.frames.len() {
-            if spec.looping {
-                self.animation.index = 0;
-                self.show_frame();
-            } else {
-                // Hold the last frame until the behaviour moves on.
-                unsafe { KillTimer(self.pet, TIMER_FRAME) };
-                let now = self.now();
-                self.behavior.round_finished(now);
-                self.refresh();
-            }
-        } else {
-            self.animation.index += 1;
+        let Some(length) = self.animation.timeline.as_ref().map(|t| t.length) else { return };
+        self.animation.elapsed = self.animation.boundary;
+        if self.animation.elapsed < length - 0.000_001 {
             self.show_frame();
+        } else if self.animation.looping {
+            self.animation.elapsed = 0.0;
+            self.show_frame();
+        } else {
+            // Hold the last frames until the behaviour moves on.
+            unsafe { KillTimer(self.pet, TIMER_FRAME) };
+            let now = self.now();
+            self.behavior.round_finished(now);
+            self.refresh();
         }
     }
 
@@ -729,24 +783,30 @@ impl App {
         if self.dib.as_ref().is_none_or(|d| d.width != w || d.height != h) {
             self.dib = Dib::new(w, h);
         }
-        let (Some(dib), Some(frame)) = (self.dib.as_mut(), self.current.as_ref()) else { return };
+        let Some(dib) = self.dib.as_mut() else { return };
         let pixels = dib.pixels();
         pixels.fill(0);
-        let bmp = &frame.bitmap;
-        for y in 0..bmp.height as i32 {
-            let dy = frame.y + y;
-            if dy < 0 || dy >= h {
-                continue;
+        for (layer, frame) in self.current.iter().enumerate() {
+            let bmp = &frame.bitmap;
+            for y in 0..bmp.height as i32 {
+                let dy = frame.y + y;
+                if dy < 0 || dy >= h {
+                    continue;
+                }
+                let x0 = frame.x.max(0);
+                let x1 = (frame.x + bmp.width as i32).min(w);
+                if x1 <= x0 {
+                    continue;
+                }
+                let src = ((y as usize * bmp.width as usize) + (x0 - frame.x) as usize) * 4;
+                let dst = (dy as usize * w as usize + x0 as usize) * 4;
+                let n = (x1 - x0) as usize * 4;
+                if layer == 0 {
+                    pixels[dst..dst + n].copy_from_slice(&bmp.data[src..src + n]);
+                } else {
+                    blend_over(&mut pixels[dst..dst + n], &bmp.data[src..src + n]);
+                }
             }
-            let x0 = frame.x.max(0);
-            let x1 = (frame.x + bmp.width as i32).min(w);
-            if x1 <= x0 {
-                continue;
-            }
-            let src = ((y as usize * bmp.width as usize) + (x0 - frame.x) as usize) * 4;
-            let dst = (dy as usize * w as usize + x0 as usize) * 4;
-            let n = (x1 - x0) as usize * 4;
-            pixels[dst..dst + n].copy_from_slice(&bmp.data[src..src + n]);
         }
         dib.present(self.pet, self.pos.0, self.pos.1);
     }
@@ -814,7 +874,7 @@ impl App {
 
     fn cursor_on_pet(&self, p: POINT) -> bool {
         let (x, y) = self.local_px(p);
-        self.current.as_ref().is_some_and(|f| f.is_opaque(x, y))
+        self.current.iter().any(|f| f.is_opaque(x, y))
     }
 
     fn on_button_down(&mut self) {
@@ -965,6 +1025,22 @@ impl App {
     }
 }
 
+/// Draws premultiplied `src` over `dst`, pixel for pixel.
+fn blend_over(dst: &mut [u8], src: &[u8]) {
+    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+        match s[3] {
+            0 => {}
+            255 => d.copy_from_slice(s),
+            a => {
+                let keep = 255 - a as u32;
+                for i in 0..4 {
+                    d[i] = (s[i] as u32 + (d[i] as u32 * keep + 127) / 255).min(255) as u8;
+                }
+            }
+        }
+    }
+}
+
 /// Coalesces the heap's free blocks and gives the large ones back to Windows
 /// (the counterpart of the Mac pet's `MemoryTrim`).
 fn trim_heap() {
@@ -1005,6 +1081,9 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     }
                     TIMER_HOUSEKEEPING => {
                         with_app(|app| app.release(!app.input_active));
+                    }
+                    TIMER_SLEEP => {
+                        with_app(|app| app.on_sleep_timer());
                     }
                     TIMER_REST => {
                         KillTimer(hwnd, TIMER_REST);

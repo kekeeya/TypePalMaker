@@ -115,6 +115,9 @@
         },
         "pet": {
           "$ref": "#/$defs/state"
+        },
+        "sleep": {
+          "$ref": "#/$defs/state"
         }
       },
       "additionalProperties": false
@@ -140,7 +143,45 @@
         },
         "loop": {
           "type": "boolean",
-          "description": "Informational: the runtime loops idle and plays every other state once per trigger, whatever this says."
+          "description": "Informational: the runtime loops idle and sleep and plays every other state once per trigger, whatever this says."
+        },
+        "sleepAfterMinutes": {
+          "type": "number",
+          "description": "Sleep only: minutes without input before the pet falls asleep. 15 when absent.",
+          "exclusiveMinimum": 0,
+          "maximum": 1440
+        },
+        "tracks": {
+          "type": "array",
+          "description": "Rows played together on one clock, the first drawn over the others. When present, the runtime plays these and `frames` holds the pet's own row, for readers that know only one.",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "frames"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string" },
+              "frames": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    { "type": "string" },
+                    {
+                      "type": "object",
+                      "required": ["id"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "duration": { "type": "number", "exclusiveMinimum": 0 },
+                        "scale": { "type": "number", "exclusiveMinimum": 0 },
+                        "offsetX": { "type": "number" },
+                        "offsetY": { "type": "number" },
+                        "rotation": { "type": "number" }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
         },
         "frames": {
           "type": "array",

@@ -1,11 +1,9 @@
 import AppKit
 import TypePalCore
 
-/// Plays one state's frames on a single `CALayer`.
-///
-/// Swapping `contents` is a GPU composite, not a redraw. There is at most one
-/// timer, armed for exactly the current frame's duration; a single-frame
-/// looping state arms none at all, which is what keeps an idle pet at ~0% CPU.
+/// Plays a state on `CALayer`s: one per track, composited (see
+/// `SpriteTimeline`). Swapping `contents` is a GPU composite, not a redraw.
+/// There is at most one timer, armed for exactly the next frame change.
 final class SpriteAnimator {
     let layer = CALayer()
     var onOneShotFinished: ((PetState) -> Void)?
@@ -15,19 +13,19 @@ final class SpriteAnimator {
     private let store: FrameStore
     private(set) var state: PetState?
     private var spec: StateSpec?
-    private var index = 0
-    /// One timer, re-armed per frame rather than recreated.
+    private var elapsed: TimeInterval = 0
+    private var scheduledBoundary: TimeInterval = 0
     private lazy var timer = ReusableTimer(tolerance: 0.008) { [weak self] in
         self?.advance()
     }
     private var isPaused = false
+    private var trackLayers: [CALayer] = []
 
-    private(set) var currentFrame: DecodedFrame?
+    private(set) var currentFrames: [DecodedFrame] = []
 
     init(store: FrameStore) {
         self.store = store
-        layer.contentsGravity = .resize
-        layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        layer.actions = ["bounds": NSNull(), "position": NSNull(), "sublayers": NSNull()]
     }
 
     /// Starts `state` from its first frame. The state already on screen
@@ -36,7 +34,7 @@ final class SpriteAnimator {
         if state == self.state, !restart { return }
         self.state = state
         self.spec = spec
-        index = 0
+        elapsed = 0
         show()
     }
 
@@ -56,39 +54,68 @@ final class SpriteAnimator {
         show()
     }
 
+    func isOpaque(at point: CGPoint) -> Bool {
+        currentFrames.contains { $0.isOpaque(at: point) }
+    }
+
+    private func ensureLayers(_ count: Int) {
+        while trackLayers.count < count {
+            let child = CALayer()
+            child.contentsGravity = .resize
+            child.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+            layer.addSublayer(child)
+            trackLayers.append(child)
+        }
+        for index in trackLayers.indices { trackLayers[index].isHidden = index >= count }
+    }
+
     private func show() {
         timer.cancel()
-        guard let spec, index < spec.frames.count else { return }
+        guard let spec else { return }
+        let timeline = SpriteTimeline(spec: spec)
+        ensureLayers(timeline.tracks.count)
+        layer.frame = CGRect(origin: .zero, size: store.boxSize)
+        let (entries, nextChange) = timeline.frames(at: elapsed)
+        currentFrames.removeAll(keepingCapacity: true)
 
-        if let frame = store.frame(spec.frames[index].id) {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer.contents = frame.image
-            layer.frame = frame.rect
-            CATransaction.commit()
-            currentFrame = frame
-            onFrameChanged?()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, entry) in entries.enumerated() {
+            let child = trackLayers[index]
+            // The first row in the editor is the uppermost visual layer.
+            child.zPosition = CGFloat(entries.count - index)
+            guard let entry, let frame = store.frame(entry.id) else {
+                child.contents = nil
+                child.isHidden = true
+                continue
+            }
+            child.isHidden = false
+            child.contents = frame.image
+            child.frame = frame.rect
+            currentFrames.append(frame)
         }
+        CATransaction.commit()
+        onFrameChanged?()
 
-        guard !isPaused else { return }
-        // A lone looping frame never changes: no timer at all.
-        if spec.frames.count == 1, spec.loop { return }
-
-        timer.schedule(after: max(spec.durations[index], 1.0 / 60))
+        guard !isPaused, timeline.length > 0 else { return }
+        // A lone looping frame never changes: no timer at all, which is what
+        // keeps an idle pet at ~0% CPU.
+        if timeline.isStill, spec.loop { return }
+        scheduledBoundary = nextChange
+        timer.schedule(after: max(scheduledBoundary - elapsed, 1.0 / 60))
     }
 
     private func advance() {
         guard let spec, let state else { return }
-        if index >= spec.frames.count - 1 {
+        elapsed = scheduledBoundary
+        if elapsed >= spec.timelineDuration - 0.000_001 {
             if spec.loop {
-                index = 0
+                elapsed = 0
                 show()
             } else {
-                // Hold the last frame until the state machine moves on.
                 onOneShotFinished?(state)
             }
         } else {
-            index += 1
             show()
         }
     }

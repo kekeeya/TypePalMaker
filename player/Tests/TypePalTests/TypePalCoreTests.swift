@@ -22,7 +22,7 @@ final class ManifestTests: XCTestCase {
         let manifest = try decode(base)
         let idle = try XCTUnwrap(manifest.playable(.idle))
         XCTAssertEqual(idle.frames, [FrameEntry(id: "a"), FrameEntry(id: "b", duration: 500)])
-        XCTAssertEqual(idle.durations, [0.25, 0.5])
+        XCTAssertEqual(idle.timelineDuration, 0.75)
         XCTAssertNoThrow(try manifest.validate())
     }
 
@@ -38,6 +38,33 @@ final class ManifestTests: XCTestCase {
 
         let dangling = base.replacingOccurrences(of: "\"frames\": [\"a\", {", with: "\"frames\": [\"zzz\", {")
         XCTAssertThrowsError(try decode(dangling).validate())
+    }
+
+    func testDecodesSleepTracks() throws {
+        let json = """
+        {
+          "schemaVersion": 1, "name": "Cat", "id": "cat", "display": { "height": 160 },
+          "frames": { "a": { "file": "a.png" }, "z": { "file": "z.png" } },
+          "states": {
+            "idle": { "enabled": true, "fps": 8, "loop": true, "frames": ["a"] },
+            "sleep": {
+              "enabled": true, "fps": 8, "loop": true, "frames": [{ "id": "a", "duration": 500 }],
+              "sleepAfterMinutes": 15,
+              "tracks": [
+                { "id": "effects", "name": "Z", "frames": ["z"] },
+                { "id": "base", "name": "Base", "frames": [{ "id": "a", "duration": 500 }] }
+              ]
+            }
+          }
+        }
+        """
+        let manifest = try decode(json)
+        let sleep = try XCTUnwrap(manifest.playable(.sleep))
+        XCTAssertEqual(sleep.timelineTracks.count, 2)
+        XCTAssertEqual(sleep.timelineDuration, 0.5)
+        XCTAssertEqual(sleep.sleepAfterMinutes, 15)
+        XCTAssertEqual(manifest.usedFrameIDs, Set(["a", "z"]))
+        XCTAssertNoThrow(try manifest.validate())
     }
 }
 
@@ -147,10 +174,97 @@ final class BehaviorTests: XCTestCase {
         XCTAssertEqual(b.current, .idle)
     }
 
-    func testOnlyIdleLoops() {
+    func testRestingStatesLoop() {
         for state in PetState.allCases {
-            XCTAssertEqual(spec().played(as: state).loop, state == .idle)
+            XCTAssertEqual(spec().played(as: state).loop, state == .idle || state == .sleep)
         }
+    }
+
+    func testSleepsAfterInactivityAndWakesOnActivity() {
+        var b = PetBehavior { state in
+            state == .sleep
+                ? StateSpec(enabled: true, fps: 10, loop: true, frames: [FrameEntry(id: "sleep")], sleepAfterMinutes: 1.0 / 60.0)
+                : self.spec()
+        }
+        b.activity(at: 0)
+        b.checkInactivity(at: 0.9)
+        XCTAssertEqual(b.current, .idle)
+        b.checkInactivity(at: 1)
+        XCTAssertEqual(b.current, .sleep)
+        b.activity(at: 1.1)
+        XCTAssertEqual(b.current, .idle)
+    }
+}
+
+final class SpriteTimelineTests: XCTestCase {
+    /// Sleep as the template has it, at 8 fps: a Z track of three 1-step
+    /// frames over a base track of one 4-step frame.
+    private func sleep() -> SpriteTimeline {
+        SpriteTimeline(spec: StateSpec(
+            enabled: true, fps: 8, loop: true, frames: [FrameEntry(id: "base", duration: 500)],
+            tracks: [
+                FrameTrack(id: "sleep-effects", name: "Z", frames: ["z1", "z2", "z3"].map { FrameEntry(id: $0) }),
+                FrameTrack(id: "sleep-base", name: "Base", frames: [FrameEntry(id: "base", duration: 500)])
+            ]
+        ))
+    }
+
+    func testTracksPlayTogetherAndTheRoundIsTheLongest() {
+        let t = sleep()
+        XCTAssertEqual(t.length, 0.5, accuracy: 1e-9)
+        XCTAssertFalse(t.isStill)
+
+        var (entries, next) = t.frames(at: 0)
+        XCTAssertEqual(entries.map { $0?.id }, ["z1", "base"])
+        XCTAssertEqual(next, 0.125, accuracy: 1e-9)
+
+        (entries, next) = t.frames(at: 0.25)
+        XCTAssertEqual(entries.map { $0?.id }, ["z3", "base"])
+        XCTAssertEqual(next, 0.375, accuracy: 1e-9)
+
+        // The Z track has ended; the base holds until the round ends.
+        (entries, next) = t.frames(at: 0.375)
+        XCTAssertEqual(entries.map { $0?.id }, [nil, "base"])
+        XCTAssertEqual(next, 0.5, accuracy: 1e-9)
+    }
+
+    func testAStateWithoutTracksIsOneTrack() {
+        let t = SpriteTimeline(spec: StateSpec(enabled: true, fps: 4, loop: true, frames: [FrameEntry(id: "a")]))
+        XCTAssertTrue(t.isStill)
+        XCTAssertEqual(t.frames(at: 0).entries.map { $0?.id }, ["a"])
+    }
+}
+
+final class SleepTimingTests: XCTestCase {
+    private func behavior() -> PetBehavior {
+        PetBehavior { state in
+            StateSpec(enabled: true, fps: 10, loop: state == .idle, frames: [FrameEntry(id: "f")], sleepAfterMinutes: state == .sleep ? 1 : nil)
+        }
+    }
+
+    func testActivityPushesTheDeadlineAndAnEarlyCheckDoesNothing() {
+        var b = behavior()
+        b.activity(at: 0)
+        XCTAssertEqual(b.nextSleepDeadline(after: 0), 60)
+        // The pointer moves at 30 s: the timer armed for 60 s fires early.
+        b.activity(at: 30)
+        b.checkInactivity(at: 60)
+        XCTAssertEqual(b.current, .idle)
+        XCTAssertEqual(b.nextSleepDeadline(after: 60), 90)
+        b.checkInactivity(at: 90)
+        XCTAssertEqual(b.current, .sleep)
+        // Asleep, there is no deadline; a key wakes it into typing.
+        XCTAssertNil(b.nextSleepDeadline(after: 91))
+        b.keyPressed(at: 95)
+        XCTAssertEqual(b.current, .typing)
+    }
+
+    func testNoSleepWithoutASleepState() {
+        var b = PetBehavior { state in state == .sleep ? nil : StateSpec(enabled: true, fps: 10, loop: true, frames: [FrameEntry(id: "f")]) }
+        b.activity(at: 0)
+        b.checkInactivity(at: 100_000)
+        XCTAssertEqual(b.current, .idle)
+        XCTAssertNil(b.nextSleepDeadline(after: 0))
     }
 }
 

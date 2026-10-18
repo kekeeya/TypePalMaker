@@ -9,12 +9,16 @@
 //! - When a round ends, a reaction still going on plays another: typing if a
 //!   key came in the round's second half, petting if the hand kept moving.
 //! - **idle** loops whenever nothing else is playing.
+//! - **sleep** loops once there has been no input for the pet's sleep delay;
+//!   any input wakes it.
 
 use super::manifest::{PetManifest, PetState};
 
 pub struct PetBehavior {
     /// Round length in seconds for each state that may be shown.
-    lengths: [Option<f64>; 5],
+    lengths: [Option<f64>; 6],
+    /// Seconds without input before the pet sleeps, if it has a sleep state.
+    sleep_after: Option<f64>,
     pub current: PetState,
     /// Bumped whenever a reaction starts, so the caller can tell a new round of
     /// the same reaction from the one already playing.
@@ -24,6 +28,7 @@ pub struct PetBehavior {
     is_stroking: bool,
     last_key_at: f64,
     last_stroke_at: f64,
+    last_activity_at: Option<f64>,
 }
 
 fn index(state: PetState) -> usize {
@@ -32,7 +37,9 @@ fn index(state: PetState) -> usize {
 
 impl PetBehavior {
     pub fn new(manifest: &PetManifest) -> PetBehavior {
-        PetBehavior::with_lengths(|state| manifest.playable(state).map(|s| s.durations().iter().sum()))
+        let mut behavior = PetBehavior::with_lengths(|state| manifest.playable(state).map(|s| s.timeline_duration()));
+        behavior.sleep_after = manifest.playable(PetState::Sleep).map(|s| s.sleep_after_minutes.unwrap_or(15.0) * 60.0);
+        behavior
     }
 
     /// `length(state)` is how long one round lasts, or `None` if the pet
@@ -40,6 +47,7 @@ impl PetBehavior {
     pub fn with_lengths(length: impl Fn(PetState) -> Option<f64>) -> PetBehavior {
         PetBehavior {
             lengths: PetState::ALL.map(length),
+            sleep_after: None,
             current: PetState::Idle,
             round: 0,
             round_start: 0.0,
@@ -47,10 +55,12 @@ impl PetBehavior {
             is_stroking: false,
             last_key_at: f64::NEG_INFINITY,
             last_stroke_at: f64::NEG_INFINITY,
+            last_activity_at: None,
         }
     }
 
     pub fn tapped(&mut self, time: f64) {
+        self.activity(time);
         if self.current != PetState::Tap {
             self.start(PetState::Tap, time);
         }
@@ -69,6 +79,7 @@ impl PetBehavior {
     }
 
     pub fn key_pressed(&mut self, time: f64) {
+        self.activity(time);
         self.last_key_at = self.last_key_at.max(time);
         if self.current == PetState::Idle {
             self.start(PetState::Typing, time);
@@ -76,9 +87,35 @@ impl PetBehavior {
     }
 
     pub fn mouse_clicked(&mut self, time: f64) {
+        self.activity(time);
         if self.current == PetState::Idle {
             self.start(PetState::MouseClick, time);
         }
+    }
+
+    /// Any input: it puts sleep off, and wakes a sleeping pet.
+    pub fn activity(&mut self, time: f64) {
+        self.last_activity_at = Some(self.last_activity_at.map_or(time, |at| at.max(time)));
+        if self.current == PetState::Sleep {
+            self.current = PetState::Idle;
+            self.round = self.round.wrapping_add(1);
+        }
+    }
+
+    /// Falls asleep if an idle pet has had no input for its sleep delay.
+    pub fn check_inactivity(&mut self, time: f64) {
+        if self.next_sleep_deadline(f64::NEG_INFINITY).is_some_and(|deadline| time >= deadline) {
+            self.start(PetState::Sleep, time);
+        }
+    }
+
+    /// When the pet falls asleep if nothing happens before then (never
+    /// earlier than `time`), or `None` if it is not idle or cannot sleep.
+    pub fn next_sleep_deadline(&self, time: f64) -> Option<f64> {
+        if self.current != PetState::Idle {
+            return None;
+        }
+        Some((self.last_activity_at? + self.sleep_after?).max(time))
     }
 
     /// The reaction showing has played its last frame through.
@@ -95,6 +132,7 @@ impl PetBehavior {
         if self.current == PetState::Idle && self.last_key_at >= second_half {
             self.start(PetState::Typing, time);
         }
+        self.check_inactivity(time);
     }
 
     /// Begins a round of `state`, if the pet has it.
@@ -211,6 +249,60 @@ mod tests {
         assert_eq!(b.current, Pet);
         b.set_stroking(false, 10.5);
         b.round_finished(10.8);
+        assert_eq!(b.current, Idle);
+    }
+
+    /// Sleeps after 60 s without input.
+    fn sleepy() -> PetBehavior {
+        let mut b = behavior(&[]);
+        b.sleep_after = Some(60.0);
+        b
+    }
+
+    #[test]
+    fn sleeps_after_the_delay_and_input_puts_it_off() {
+        let mut b = sleepy();
+        b.activity(0.0);
+        assert_eq!(b.next_sleep_deadline(10.0), Some(60.0));
+        b.check_inactivity(59.0);
+        assert_eq!(b.current, Idle);
+        b.mouse_clicked(30.0);
+        b.round_finished(30.4);
+        assert_eq!(b.next_sleep_deadline(31.0), Some(90.0));
+        b.check_inactivity(60.0);
+        assert_eq!(b.current, Idle, "the click put sleep off");
+        b.check_inactivity(90.0);
+        assert_eq!(b.current, Sleep);
+        assert_eq!(b.next_sleep_deadline(91.0), None);
+    }
+
+    #[test]
+    fn a_key_wakes_it_into_typing() {
+        let mut b = sleepy();
+        b.activity(0.0);
+        b.check_inactivity(60.0);
+        let round = b.round;
+        b.key_pressed(100.0);
+        assert_eq!(b.current, Typing);
+        assert!(b.round > round);
+    }
+
+    #[test]
+    fn moving_the_mouse_wakes_it_to_idle() {
+        let mut b = sleepy();
+        b.activity(0.0);
+        b.check_inactivity(60.0);
+        b.activity(70.0);
+        assert_eq!(b.current, Idle);
+        assert_eq!(b.next_sleep_deadline(70.0), Some(130.0));
+    }
+
+    #[test]
+    fn no_sleep_without_a_sleep_state() {
+        let mut b = behavior(&[]);
+        b.activity(0.0);
+        assert_eq!(b.next_sleep_deadline(0.0), None);
+        b.check_inactivity(10_000.0);
         assert_eq!(b.current, Idle);
     }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The five reactions a pet can have. Raw values are the keys used in
+/// The reactions a pet can have. Raw values are the keys used in
 /// `manifest.json`.
 public enum PetState: String, CaseIterable, Codable, Sendable {
     case idle
@@ -8,6 +8,7 @@ public enum PetState: String, CaseIterable, Codable, Sendable {
     case mouseClick
     case tap
     case pet
+    case sleep
 }
 
 /// One frame in a state's sequence: which image, and for how long.
@@ -40,28 +41,68 @@ extension FrameEntry: Decodable {
     }
 }
 
+public struct FrameTrack: Decodable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let frames: [FrameEntry]
+
+    public init(id: String, name: String, frames: [FrameEntry]) {
+        self.id = id
+        self.name = name
+        self.frames = frames
+    }
+}
+
 public struct StateSpec: Decodable, Equatable, Sendable {
     public let enabled: Bool
     public let fps: Double
     public let loop: Bool
     public let frames: [FrameEntry]
+    public let tracks: [FrameTrack]?
+    public let sleepAfterMinutes: Double?
 
-    public init(enabled: Bool, fps: Double, loop: Bool, frames: [FrameEntry]) {
+    public init(
+        enabled: Bool,
+        fps: Double,
+        loop: Bool,
+        frames: [FrameEntry],
+        tracks: [FrameTrack]? = nil,
+        sleepAfterMinutes: Double? = nil
+    ) {
         self.enabled = enabled
         self.fps = fps
         self.loop = loop
         self.frames = frames
+        self.tracks = tracks
+        self.sleepAfterMinutes = sleepAfterMinutes
     }
 
-    /// Seconds each frame stays on screen.
-    public var durations: [TimeInterval] {
-        frames.map { ($0.duration.map { $0 / 1000 }) ?? (1 / fps) }
+    public var timelineTracks: [FrameTrack] {
+        if let tracks, !tracks.isEmpty { return tracks }
+        return [FrameTrack(id: "main", name: "", frames: frames)]
+    }
+
+    public var allFrames: [FrameEntry] { timelineTracks.flatMap(\.frames) }
+
+    public var timelineDuration: TimeInterval {
+        timelineTracks.map { track in
+            track.frames.reduce(0) { total, entry in
+                total + ((entry.duration.map { $0 / 1000 }) ?? (1 / fps))
+            }
+        }.max() ?? 0
     }
 
     /// How a state is played, whatever its file says: idle loops, every
     /// reaction plays once per trigger (see `PetBehavior`).
     public func played(as state: PetState) -> StateSpec {
-        StateSpec(enabled: enabled, fps: fps, loop: state == .idle, frames: frames)
+        StateSpec(
+            enabled: enabled,
+            fps: fps,
+            loop: state == .idle || state == .sleep,
+            frames: frames,
+            tracks: tracks,
+            sleepAfterMinutes: sleepAfterMinutes
+        )
     }
 }
 
@@ -114,13 +155,13 @@ public struct PetManifest: Decodable, Sendable {
 
     /// The spec for a state if it may be shown, i.e. enabled and non-empty.
     public func playable(_ state: PetState) -> StateSpec? {
-        guard let spec = states[state], spec.enabled, !spec.frames.isEmpty else { return nil }
+        guard let spec = states[state], spec.enabled, !spec.allFrames.isEmpty else { return nil }
         return spec
     }
 
     /// Every frame id referenced by a playable state.
     public var usedFrameIDs: Set<String> {
-        Set(PetState.allCases.compactMap(playable).flatMap { $0.frames.map(\.id) })
+        Set(PetState.allCases.compactMap(playable).flatMap { $0.allFrames.map(\.id) })
     }
 
     public func validate() throws {
@@ -134,14 +175,17 @@ public struct PetManifest: Decodable, Sendable {
             throw ManifestError("display.height 必须大于 0", "display.height must be greater than 0")
         }
         for (state, spec) in states where spec.enabled {
-            guard !spec.frames.isEmpty else {
+            guard !spec.allFrames.isEmpty else {
                 throw ManifestError("状态 \(state.rawValue) 已开启但没有帧", "State \(state.rawValue) is on but has no frames")
             }
             guard spec.fps > 0 else {
                 throw ManifestError("状态 \(state.rawValue) 的 fps 必须大于 0", "State \(state.rawValue) needs an fps greater than 0")
             }
-            for entry in spec.frames where frames[entry.id] == nil {
+            for entry in spec.allFrames where frames[entry.id] == nil {
                 throw ManifestError("状态 \(state.rawValue) 引用了不存在的帧：\(entry.id)", "State \(state.rawValue) uses a missing frame: \(entry.id)")
+            }
+            if state == .sleep, (spec.sleepAfterMinutes ?? 15) <= 0 {
+                throw ManifestError("睡眠等待时间必须大于 0", "Sleep delay must be greater than 0")
             }
         }
     }

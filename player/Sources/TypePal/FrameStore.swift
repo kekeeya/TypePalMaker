@@ -97,7 +97,8 @@ final class FrameStore {
     init(manifest: PetManifest, directory: URL) {
         self.manifest = manifest
         self.directory = directory
-        pinned = Set(manifest.playable(.idle)?.frames.map(\.id) ?? [])
+        // Idle plays whenever nothing else does: all its rows stay decoded.
+        pinned = Set(manifest.playable(.idle)?.allFrames.map(\.id) ?? [])
 
         // Header reads only; nothing is decoded here.
         var sizes: [String: CGSize] = [:]
@@ -139,6 +140,13 @@ final class FrameStore {
         touch(id)
         evictIfNeeded()
         return decoded
+    }
+
+    /// Lets go of every frame but idle's, which keeps playing; the rest are
+    /// decoded again when a reaction next needs them.
+    func releaseUnpinned() {
+        cache = cache.filter { pinned.contains($0.key) }
+        recency.removeAll { !pinned.contains($0) }
     }
 
     var cachedBytes: Int {

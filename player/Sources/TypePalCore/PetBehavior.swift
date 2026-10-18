@@ -33,6 +33,7 @@ public struct PetBehavior {
     private var isStroking = false
     private var lastKeyAt: TimeInterval = -.infinity
     private var lastStrokeAt: TimeInterval = -.infinity
+    private var lastActivityAt: TimeInterval?
 
     public init(manifest: PetManifest) {
         self.init(playable: manifest.playable)
@@ -45,6 +46,7 @@ public struct PetBehavior {
     // MARK: Events
 
     public mutating func tapped(at time: TimeInterval) {
+        activity(at: time)
         guard current != .tap else { return }
         start(.tap, at: time)
     }
@@ -58,12 +60,35 @@ public struct PetBehavior {
     }
 
     public mutating func keyPressed(at time: TimeInterval) {
+        activity(at: time)
         lastKeyAt = max(lastKeyAt, time)
         if current == .idle { start(.typing, at: time) }
     }
 
     public mutating func mouseClicked(at time: TimeInterval) {
+        activity(at: time)
         if current == .idle { start(.mouseClick, at: time) }
+    }
+
+    public mutating func activity(at time: TimeInterval) {
+        lastActivityAt = max(lastActivityAt ?? -.infinity, time)
+        if current == .sleep {
+            current = .idle
+            round &+= 1
+        }
+    }
+
+    public mutating func checkInactivity(at time: TimeInterval) {
+        guard current == .idle,
+              let sleep = playable(.sleep),
+              let lastActivityAt,
+              time - lastActivityAt >= (sleep.sleepAfterMinutes ?? 15) * 60 else { return }
+        start(.sleep, at: time)
+    }
+
+    public func nextSleepDeadline(after time: TimeInterval) -> TimeInterval? {
+        guard current == .idle, let sleep = playable(.sleep), let lastActivityAt else { return nil }
+        return max(time, lastActivityAt + (sleep.sleepAfterMinutes ?? 15) * 60)
     }
 
     /// The reaction showing has played its last frame through.
@@ -78,6 +103,7 @@ public struct PetBehavior {
         if current == .idle, lastKeyAt >= secondHalf {
             start(.typing, at: time)
         }
+        checkInactivity(at: time)
     }
 
     // MARK: Private
@@ -88,6 +114,6 @@ public struct PetBehavior {
         current = state
         round &+= 1
         roundStart = time
-        roundLength = spec.durations.reduce(0, +)
+        roundLength = spec.timelineDuration
     }
 }

@@ -5,7 +5,8 @@
 //!     typepal-pack <TypePal.exe> --mascot <typepal-frames dir> <out.exe>
 //!
 //! A pet dir holds `manifest.json` and the files it names. `--mascot` builds
-//! the built-in TypePal mascot from its `animation.json`, every reaction on.
+//! the built-in TypePal mascot from its `animation.json`, every reaction on,
+//! and sleep as the Maker's template has it.
 
 use serde_json::{Map, Value, json};
 use std::path::Path;
@@ -62,6 +63,24 @@ fn mascot(dir: &Path) -> Vec<(String, Vec<u8>)> {
         }
         states.insert(state.into(), json!({ "enabled": !ids.is_empty(), "fps": animation["fps"], "loop": state == "idle", "frames": ids }));
     }
+    // Sleep as the Maker's template has it: Zs over a resting pet that
+    // spans the three of them and one more.
+    let mut add = |name: &str| {
+        let id = name.trim_end_matches(".png").to_string();
+        let file = format!("frames/{name}");
+        files.push((file.clone(), std::fs::read(dir.join(name)).unwrap()));
+        frames.insert(id.clone(), json!({ "file": file }));
+        id
+    };
+    let zs: Vec<String> = ["sleep-z-01.png", "sleep-z-02.png", "sleep-z-03.png"].map(&mut add).into();
+    let base = json!({ "id": add("sleep-base-01.png"), "duration": 4000.0 / animation["fps"].as_f64().unwrap() });
+    states.insert("sleep".into(), json!({
+        "enabled": true, "fps": animation["fps"], "loop": true, "frames": [base], "sleepAfterMinutes": 15,
+        "tracks": [
+            { "id": "sleep-effects", "name": "", "frames": zs },
+            { "id": "sleep-base", "name": "", "frames": [base] },
+        ],
+    }));
     let manifest = json!({
         "schemaVersion": 1, "name": "TypePal 小团子", "id": "typepal-mascot",
         "display": { "height": 192 }, "frames": frames, "states": states,

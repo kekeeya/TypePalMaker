@@ -15,6 +15,12 @@ final class PetController {
     /// The behaviour round the animator is showing.
     private var shownRound = -1
     private var stroke = StrokeRecognizer()
+    private lazy var sleepTimer = ReusableTimer(tolerance: 0.05) { [weak self] in
+        guard let self else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        behavior.checkInactivity(at: now)
+        refresh()
+    }
     /// A hand that stops moving produces no further events, so the stroke is
     /// re-checked just past the lapse to let it expire.
     private lazy var strokeSettleTimer = ReusableTimer(tolerance: 0.05) { [weak self] in
@@ -23,6 +29,15 @@ final class PetController {
         publishStroke()
     }
     private var isOccluded = false
+    /// Every half hour, and a minute after the pet stops being seen, what is
+    /// not needed right now is let go (as the Windows pet does).
+    private lazy var housekeepingTimer = ReusableTimer(tolerance: 60) { [weak self] in
+        self?.housekeep()
+    }
+    private lazy var restTimer = ReusableTimer(tolerance: 5) { [weak self] in
+        self?.releaseMemory()
+    }
+    private static let housekeepingInterval: TimeInterval = 30 * 60
 
     /// Builds the actions shown on right-click over the pet artwork.
     var menuProvider: (() -> PetContextActions)? {
@@ -56,8 +71,22 @@ final class PetController {
         restorePosition()
         layering.apply(alwaysOnTop: Preferences.alwaysOnTop)
         layering.startObserving()
+        behavior.activity(at: ProcessInfo.processInfo.systemUptime)
         refresh()
         setVisible(Preferences.visible)
+        housekeepingTimer.schedule(after: Self.housekeepingInterval)
+    }
+
+    private func housekeep() {
+        releaseMemory()
+        housekeepingTimer.schedule(after: Self.housekeepingInterval)
+    }
+
+    /// Frames other than idle's are decoded again when next shown; the freed
+    /// memory goes back to the system.
+    private func releaseMemory() {
+        store.releaseUnpinned()
+        MemoryTrim.soon()
     }
 
     func setVisible(_ visible: Bool) {
@@ -109,7 +138,7 @@ final class PetController {
         }
 
         view.isOpaqueAt = { [weak self] point in
-            self?.animator.currentFrame?.isOpaque(at: point) ?? false
+            self?.animator.isOpaque(at: point) ?? false
         }
         view.isDragLocked = { Preferences.lockPosition }
         view.onTap = { [weak self] in self?.handleTap() }
@@ -164,12 +193,18 @@ final class PetController {
     /// Shows what the behaviour has decided: a new round starts from its
     /// first frame; the round already playing carries on untouched.
     private func refresh() {
+        let now = ProcessInfo.processInfo.systemUptime
         let state = behavior.current
         guard let spec = manifest.playable(state) else { return }
         let newRound = behavior.round != shownRound
         shownRound = behavior.round
         if state != animator.state { debugLog("state → \(state.rawValue)") }
         animator.play(state, spec: spec.played(as: state), restart: newRound && state != .idle)
+        if let deadline = behavior.nextSleepDeadline(after: now) {
+            sleepTimer.schedule(after: deadline - now + 0.01)
+        } else {
+            sleepTimer.cancel()
+        }
     }
 
     private func handleTap() {
@@ -178,7 +213,14 @@ final class PetController {
         panel.orderFrontRegardless()
     }
 
+    /// Every pointer move anywhere is activity. Cheap on purpose, as it runs
+    /// for each move: the time is noted, and only a sleeping pet is woken. The
+    /// sleep timer is not moved here; when it fires early it re-arms itself
+    /// for the deadline the latest activity set.
     private func handleMouseMoved() {
+        let wasAsleep = behavior.current == .sleep
+        behavior.activity(at: ProcessInfo.processInfo.systemUptime)
+        if wasAsleep { refresh() }
         trackStroke()
         updatePassthrough()
     }
@@ -187,11 +229,13 @@ final class PetController {
     private func updateActivity() {
         let active = panel.isVisible && !isOccluded
         if active {
+            restTimer.cancel()
             input.start()
             animator.resume()
         } else {
             input.stop()
             animator.pause()
+            restTimer.schedule(after: 60)
         }
         debugLog(active ? "active" : "paused")
     }
@@ -203,7 +247,7 @@ final class PetController {
         let screenPoint = NSEvent.mouseLocation
         guard panel.isVisible, panel.frame.contains(screenPoint) else { return false }
         let local = view.convert(panel.convertPoint(fromScreen: screenPoint), from: nil)
-        return animator.currentFrame?.isOpaque(at: local) ?? false
+        return animator.isOpaque(at: local)
     }
 
     private func updatePassthrough() {

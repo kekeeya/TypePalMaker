@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::strings::Bilingual;
 
-/// The five reactions a pet can have, in manifest key order.
+/// The reactions a pet can have, in manifest key order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PetState {
     Idle,
@@ -15,10 +15,12 @@ pub enum PetState {
     MouseClick,
     Tap,
     Pet,
+    Sleep,
 }
 
 impl PetState {
-    pub const ALL: [PetState; 5] = [PetState::Idle, PetState::Typing, PetState::MouseClick, PetState::Tap, PetState::Pet];
+    pub const ALL: [PetState; 6] =
+        [PetState::Idle, PetState::Typing, PetState::MouseClick, PetState::Tap, PetState::Pet, PetState::Sleep];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -27,6 +29,7 @@ impl PetState {
             PetState::MouseClick => "mouseClick",
             PetState::Tap => "tap",
             PetState::Pet => "pet",
+            PetState::Sleep => "sleep",
         }
     }
 
@@ -59,25 +62,59 @@ impl<'de> Deserialize<'de> for FrameEntry {
     }
 }
 
+/// One row of a state's timeline. The rows play together on one clock, the
+/// first drawn over the others (sleep: a Z effect over the pet).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct FrameTrack {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub frames: Vec<FrameEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StateSpec {
     pub enabled: bool,
     pub fps: f64,
     #[serde(rename = "loop")]
     pub looping: bool,
+    /// The pet's own row, for readers that know only one.
     pub frames: Vec<FrameEntry>,
+    #[serde(default)]
+    pub tracks: Option<Vec<FrameTrack>>,
+    /// Sleep only: how long without any input before the pet falls asleep.
+    #[serde(default)]
+    pub sleep_after_minutes: Option<f64>,
 }
 
 impl StateSpec {
-    /// Seconds each frame stays on screen.
-    pub fn durations(&self) -> Vec<f64> {
-        self.frames.iter().map(|f| f.duration.map(|ms| ms / 1000.0).unwrap_or(1.0 / self.fps)).collect()
+    /// Seconds an entry stays on screen.
+    pub fn duration(&self, entry: &FrameEntry) -> f64 {
+        entry.duration.map(|ms| ms / 1000.0).unwrap_or(1.0 / self.fps)
     }
 
-    /// How a state is played, whatever its file says: idle loops, every
-    /// reaction plays once per trigger (see `PetBehavior`).
+    /// The rows to play: `tracks`, or `frames` as the only one.
+    pub fn timeline_tracks(&self) -> Vec<FrameTrack> {
+        match &self.tracks {
+            Some(tracks) if !tracks.is_empty() => tracks.clone(),
+            _ => vec![FrameTrack { id: "main".into(), name: String::new(), frames: self.frames.clone() }],
+        }
+    }
+
+    pub fn all_frames(&self) -> Vec<FrameEntry> {
+        self.timeline_tracks().into_iter().flat_map(|t| t.frames).collect()
+    }
+
+    /// Seconds in one round: as long as the longest row.
+    pub fn timeline_duration(&self) -> f64 {
+        self.timeline_tracks().iter().map(|t| t.frames.iter().map(|e| self.duration(e)).sum::<f64>()).fold(0.0, f64::max)
+    }
+
+    /// How a state is played, whatever its file says: idle and sleep loop,
+    /// every reaction plays once per trigger (see `PetBehavior`).
     pub fn played_as(&self, state: PetState) -> StateSpec {
-        StateSpec { looping: state == PetState::Idle, ..self.clone() }
+        StateSpec { looping: state == PetState::Idle || state == PetState::Sleep, ..self.clone() }
     }
 }
 
@@ -145,7 +182,7 @@ impl PetManifest {
 
     /// The spec for a state if it may be shown, i.e. enabled and non-empty.
     pub fn playable(&self, state: PetState) -> Option<&StateSpec> {
-        self.states.get(&state).filter(|s| s.enabled && !s.frames.is_empty())
+        self.states.get(&state).filter(|s| s.enabled && !s.all_frames().is_empty())
     }
 
     /// Every frame id referenced by a playable state.
@@ -153,7 +190,7 @@ impl PetManifest {
         PetState::ALL
             .into_iter()
             .filter_map(|s| self.playable(s))
-            .flat_map(|spec| spec.frames.iter().map(|f| f.id.clone()))
+            .flat_map(|spec| spec.all_frames().into_iter().map(|f| f.id))
             .collect()
     }
 
@@ -173,13 +210,14 @@ impl PetManifest {
                 continue;
             }
             let key = state.key();
-            if spec.frames.is_empty() {
+            let frames = spec.all_frames();
+            if frames.is_empty() {
                 return Err(Bilingual::new(format!("状态 {key} 已开启但没有帧"), format!("State {key} is on but has no frames")));
             }
             if !(spec.fps > 0.0) {
                 return Err(Bilingual::new(format!("状态 {key} 的 fps 必须大于 0"), format!("State {key} needs an fps greater than 0")));
             }
-            for entry in &spec.frames {
+            for entry in &frames {
                 if !self.frames.contains_key(&entry.id) {
                     let id = &entry.id;
                     return Err(Bilingual::new(
@@ -187,6 +225,9 @@ impl PetManifest {
                         format!("State {key} uses a missing frame: {id}"),
                     ));
                 }
+            }
+            if *state == PetState::Sleep && !(spec.sleep_after_minutes.unwrap_or(15.0) > 0.0) {
+                return Err(Bilingual::new("睡眠等待时间必须大于 0", "Sleep delay must be greater than 0"));
             }
         }
         Ok(())
@@ -215,7 +256,7 @@ mod tests {
             idle.frames,
             vec![FrameEntry { id: "a".into(), duration: None }, FrameEntry { id: "b".into(), duration: Some(500.0) }]
         );
-        assert_eq!(idle.durations(), vec![0.25, 0.5]);
+        assert_eq!(idle.frames.iter().map(|e| idle.duration(e)).collect::<Vec<_>>(), vec![0.25, 0.5]);
         assert!(manifest.validate().is_ok());
     }
 
@@ -234,11 +275,47 @@ mod tests {
         assert!(PetManifest::parse(dangling.as_bytes()).unwrap().validate().is_err());
     }
 
+    /// The Mac pet's sleep (a state with tracks) is not this runtime's yet: a
+    /// manifest that has it still loads, and the pet simply never sleeps.
     #[test]
-    fn only_idle_loops() {
-        let spec = StateSpec { enabled: true, fps: 10.0, looping: false, frames: vec![] };
+    fn reads_sleep_and_rows() {
+        let json = r#"{
+          "schemaVersion": 1, "name": "Cat", "id": "cat", "display": { "height": 160 },
+          "frames": { "a": { "file": "a.png" }, "z": { "file": "z.png" } },
+          "states": {
+            "idle": { "enabled": true, "fps": 8, "loop": true, "frames": ["a"],
+                      "tracks": [{ "id": "sleep-effects", "name": "", "frames": ["z", "z"] },
+                                 { "id": "main", "name": "", "frames": ["a"] }] },
+            "sleep": { "enabled": true, "fps": 8, "loop": true, "frames": ["a"], "sleepAfterMinutes": 3,
+                       "tracks": [{ "id": "sleep-base", "name": "", "frames": [{ "id": "a", "duration": 500 }] }] }
+          }
+        }"#;
+        let manifest = PetManifest::load(json.as_bytes()).unwrap();
+        assert_eq!(manifest.used_frame_ids().len(), 2);
+        let idle = manifest.playable(PetState::Idle).unwrap();
+        assert_eq!(idle.timeline_tracks().len(), 2);
+        assert_eq!(idle.timeline_duration(), 0.25);
+        let sleep = manifest.playable(PetState::Sleep).unwrap();
+        assert_eq!(sleep.sleep_after_minutes, Some(3.0));
+        assert_eq!(sleep.timeline_duration(), 0.5);
+    }
+
+    #[test]
+    fn a_missing_row_frame_is_rejected() {
+        let json = r#"{
+          "schemaVersion": 1, "name": "Cat", "id": "cat", "display": { "height": 160 },
+          "frames": { "a": { "file": "a.png" } },
+          "states": { "idle": { "enabled": true, "fps": 8, "loop": true, "frames": ["a"],
+                                "tracks": [{ "id": "fx", "name": "", "frames": ["gone"] }, { "id": "main", "name": "", "frames": ["a"] }] } }
+        }"#;
+        assert!(PetManifest::load(json.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn only_idle_and_sleep_loop() {
+        let spec = StateSpec { enabled: true, fps: 10.0, looping: false, frames: vec![], tracks: None, sleep_after_minutes: None };
         for state in PetState::ALL {
-            assert_eq!(spec.played_as(state).looping, state == PetState::Idle);
+            assert_eq!(spec.played_as(state).looping, state == PetState::Idle || state == PetState::Sleep);
         }
     }
 }

@@ -28,7 +28,8 @@ pub fn sections() -> Vec<(Option<String>, String)> {
                  1. 打字反应：只读取系统提供的「最近一次操作发生的时间」，并排除鼠标的操作，用来判断你是否正在打字。它不接收按键事件，无法得知你按了哪个键、输入了什么内容，也不会记录。\n\
                  2. 鼠标点击反应：只在你按下鼠标按键时得知「发生了一次点击」，并判断是否点在 TypePal 自己身上，不记录点击的位置和所在的应用。\n\
                  3. 点击与抚摸：光标在 TypePal 身上移动时读取光标的位置，只用来判断你是点到了它还是在抚摸它，不记录光标的移动轨迹。\n\
-                 4. 以上信息只在内存中即时使用，用完即弃，不写入磁盘，也不会发送到任何地方。",
+                 4. 睡眠：只记下你最近一次使用键盘或鼠标（包括移动鼠标）的时间，一段时间没有操作就进入睡眠，一有操作就醒来。不记录你做了什么。\n\
+                 5. 以上信息只在内存中即时使用，用完即弃，不写入磁盘，也不会发送到任何地方。",
             ),
             s(
                 Some("三、本地存储"),
@@ -49,7 +50,8 @@ pub fn sections() -> Vec<(Option<String>, String)> {
                  1. Typing: it reads only \"when you last used the computer\", provided by the system, and leaves out mouse activity, to tell whether you are typing. It receives no key events, cannot see which keys you press or what you type, and records nothing.\n\
                  2. Mouse clicks: it learns only that \"a click happened\" when you press a mouse button, and whether it was on TypePal itself. It does not record where you clicked or in which app.\n\
                  3. Clicking and petting: when the pointer moves over TypePal, it reads where the pointer is, only to tell whether you clicked it or are petting it. It does not record where the pointer has been.\n\
-                 4. All of the above is used in memory at that moment and then discarded. None of it is written to disk or sent anywhere.",
+                 4. Sleep: it notes only when you last used the keyboard or mouse (moving the mouse included), to fall asleep after a while without input and wake when there is some. It does not record what you did.\n\
+                 5. All of the above is used in memory at that moment and then discarded. None of it is written to disk or sent anywhere.",
             ),
             s(
                 Some("3. Local storage"),

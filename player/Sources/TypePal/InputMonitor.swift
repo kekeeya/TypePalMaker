@@ -27,6 +27,7 @@ final class InputMonitor {
     private var clickMonitor: Any?
     private var localClickMonitor: Any?
     private var moveMonitor: Any?
+    private var localMoveMonitor: Any?
     private var lastReportedKeyAt: TimeInterval = -.infinity
 
     func start() {
@@ -57,17 +58,24 @@ final class InputMonitor {
         ) { [weak self] _ in
             self?.onMouseMoved?()
         }
+        localMoveMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+        ) { [weak self] event in
+            self?.onMouseMoved?()
+            return event
+        }
     }
 
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
-        for monitor in [clickMonitor, localClickMonitor, moveMonitor].compactMap({ $0 }) {
+        for monitor in [clickMonitor, localClickMonitor, moveMonitor, localMoveMonitor].compactMap({ $0 }) {
             NSEvent.removeMonitor(monitor)
         }
         clickMonitor = nil
         localClickMonitor = nil
         moveMonitor = nil
+        localMoveMonitor = nil
     }
 
     private func pollKeyboard() {

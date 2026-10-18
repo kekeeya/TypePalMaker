@@ -14,6 +14,7 @@ pub mod core {
     pub mod manifest;
     pub mod payload;
     pub mod stroke;
+    pub mod timeline;
 }
 pub mod prefs;
 pub mod privacy;

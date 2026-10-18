@@ -67,7 +67,7 @@ impl FrameStore {
         }
         let pinned = manifest
             .playable(PetState::Idle)
-            .map(|s| s.frames.iter().map(|f| f.id.clone()).collect())
+            .map(|s| s.all_frames().into_iter().map(|f| f.id).collect())
             .unwrap_or_default();
         FrameStore {
             source_sizes,
