@@ -1,9 +1,10 @@
 import AppKit
 
-/// The pet's speech bubble: warm white, a light outline and a soft shadow,
-/// at most two lines, with a tail pointing at the pet's head. A child window
-/// of the pet, so it moves with it; it never takes the mouse. Above the pet,
-/// or below it when there is no room above; always inside the screen.
+/// The pet's speech bubble: warm white with a light outline, no shadow,
+/// at most two lines, with a tail pointing at the middle of the pet's head.
+/// A child window of the pet, so it moves with it; it never takes the mouse.
+/// Above the pet, or below it when there is no room above; always inside the
+/// screen. It comes in floating up a little, quickly.
 final class SpeechBubble {
     private weak var pet: NSWindow?
     private var window: NSPanel?
@@ -16,12 +17,21 @@ final class SpeechBubble {
     }
 
     /// Shows `line` for `duration` seconds, pointing at `anchor` (the top of
-    /// the artwork, in the pet window's coordinates).
+    /// the artwork, in the pet window's coordinates). A bubble already up
+    /// takes the new line: a fast typist changes it often, and its window is
+    /// reused rather than made again each time.
     func show(_ line: String, for duration: TimeInterval, pointingAt anchor: CGPoint) {
         guard let pet, pet.isVisible else { return }
-        hide()
         self.anchor = anchor
         let view = BubbleView(line: line)
+        if let window {
+            window.contentView = view
+            window.setContentSize(view.frame.size)
+            place()
+            view.rise()
+            hideTimer.schedule(after: duration)
+            return
+        }
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: view.frame.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -36,6 +46,7 @@ final class SpeechBubble {
         window = panel
         place()
         pet.addChildWindow(panel, ordered: .above)
+        view.rise()
         moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: pet, queue: .main) { [weak self] _ in
             self?.place()
         }
@@ -58,10 +69,10 @@ final class SpeechBubble {
         let screen = (pet.screen ?? NSScreen.main)?.visibleFrame ?? .infinite
         let size = window.frame.size
         let tip = CGPoint(x: pet.frame.minX + anchor.x, y: pet.frame.minY + anchor.y)
-        // Above the head, the tail three quarters along; below the pet if the
-        // screen's top is in the way.
+        // Above the head, centred on it; below the pet if the screen's top is
+        // in the way.
         var below = tip.y + size.height > screen.maxY
-        var origin = CGPoint(x: tip.x - size.width * 0.75, y: tip.y)
+        var origin = CGPoint(x: tip.x - size.width / 2, y: tip.y)
         if below {
             origin.y = pet.frame.minY - size.height
             if origin.y < screen.minY { below = false; origin.y = screen.maxY - size.height }
@@ -78,7 +89,7 @@ final class BubbleView: NSView {
     var tail = Tail(x: 0, below: false) { didSet { needsDisplay = true } }
 
     private let text: NSAttributedString
-    private static let margin: CGFloat = 12    // room for the shadow
+    private static let margin: CGFloat = 12    // clear space around it
     private static let tailHeight: CGFloat = 8
     private static let padding = NSSize(width: 14, height: 9)
     private static let maxTextWidth: CGFloat = 200
@@ -104,10 +115,29 @@ final class BubbleView: NSView {
             height: textSize.height + Self.padding.height * 2 + Self.tailHeight + Self.margin * 2
         )
         super.init(frame: NSRect(origin: .zero, size: size))
+        wantsLayer = true
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Floats up into place from a little below, fading in: quick, so a
+    /// click feels answered at once.
+    func rise() {
+        guard let layer else { return }
+        let lift = CABasicAnimation(keyPath: "transform.translation.y")
+        lift.fromValue = -6
+        lift.toValue = 0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [lift, fade]
+        group.duration = 0.18
+        // Cubic ease-out, as the Windows bubble and the Maker's preview.
+        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1)
+        layer.add(group, forKey: "rise")
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let m = Self.margin
@@ -115,16 +145,9 @@ final class BubbleView: NSView {
         if tail.below { body.size.height -= Self.tailHeight } else { body.origin.y += Self.tailHeight; body.size.height -= Self.tailHeight }
         let path = Self.outline(body: body, radius: 14, tailX: min(max(tail.x, body.minX + 22), body.maxX - 22), tailUp: tail.below)
 
-        // One shape, bubble and tail: one shadow and one outline.
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor(white: 0.2, alpha: 0.16)
-        shadow.shadowBlurRadius = 9
-        shadow.shadowOffset = NSSize(width: 0, height: -3)
-        shadow.set()
+        // One shape, bubble and tail: one fill and one outline, no shadow.
         NSColor(srgbRed: 1, green: 0.992, blue: 0.969, alpha: 1).setFill()
         path.fill()
-        NSGraphicsContext.restoreGraphicsState()
         NSColor(srgbRed: 0.902, green: 0.875, blue: 0.839, alpha: 1).setStroke()
         path.lineWidth = 1
         path.lineJoinStyle = .round

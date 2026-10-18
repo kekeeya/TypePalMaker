@@ -147,8 +147,13 @@ impl Dib {
 
     /// Shows the DIB (premultiplied BGRA) as `hwnd`'s content at `x`, `y`.
     pub fn present(&self, hwnd: HWND, x: i32, y: i32) {
+        self.present_faded(hwnd, x, y, 255);
+    }
+
+    /// As `present`, the whole window at `alpha` (0 to 255).
+    pub fn present_faded(&self, hwnd: HWND, x: i32, y: i32, alpha: u8) {
         unsafe {
-            let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, BlendFlags: 0, SourceConstantAlpha: 255, AlphaFormat: AC_SRC_ALPHA as u8 };
+            let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, BlendFlags: 0, SourceConstantAlpha: alpha, AlphaFormat: AC_SRC_ALPHA as u8 };
             let pos = POINT { x, y };
             let size = SIZE { cx: self.width, cy: self.height };
             let src = POINT { x: 0, y: 0 };

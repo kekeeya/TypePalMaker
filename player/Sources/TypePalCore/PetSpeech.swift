@@ -1,12 +1,10 @@
 import Foundation
 
-/// What the pet says, and when: one bubble at a time, on screen for a while
-/// that grows with the line; the next can come as soon as it has gone (a
-/// typing pet is typed at to see it react). A line due while one is up is
-/// not said at all; nothing queues up. A pool does not give the same line
-/// twice running.
+/// What the pet says: one bubble at a time, on screen for a while that grows
+/// with the line. A new line takes the place of the one up at once, so a
+/// click is answered right away. A pool does not give the same line twice
+/// running.
 public struct PetSpeech {
-    private var quietUntil: TimeInterval = -.infinity
     private var lastLine: String?
     /// A number in 0..<1, uniformly; replaced in tests.
     private let random: () -> Double
@@ -28,14 +26,13 @@ public struct PetSpeech {
         return state.loops ? [] : (spec.lines ?? [])
     }
 
-    /// A line to say now, or nil: nothing to say, or the last still up.
-    public mutating func say(from pool: [String], at time: TimeInterval) -> String? {
+    /// A line to say now, or nil when there is nothing to say.
+    public mutating func say(from pool: [String]) -> String? {
         let lines = pool.filter { !$0.isEmpty }
-        guard !lines.isEmpty, time >= quietUntil else { return nil }
+        guard !lines.isEmpty else { return nil }
         let choices = lines.count > 1 ? lines.filter { $0 != lastLine } : lines
         let line = choices[min(choices.count - 1, Int(random() * Double(choices.count)))]
         lastLine = line
-        quietUntil = time + Self.duration(of: line)
         return line
     }
 }

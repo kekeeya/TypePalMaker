@@ -59,6 +59,8 @@ const TIMER_SLEEP: usize = 8;
 const TIMER_VARIANT: usize = 9;
 /// Takes the speech bubble away when its line has been up long enough.
 const TIMER_BUBBLE: usize = 10;
+/// Moves the speech bubble's rise on, while it comes in.
+const TIMER_BUBBLE_RISE: usize = 11;
 
 /// How often to look at the keyboard. What is read is a timestamp, so polling
 /// only adds latency to noticing, never error to when (as on macOS).
@@ -657,8 +659,10 @@ impl App {
         let age = unsafe { GetTickCount() }.wrapping_sub(tick) as f64 / 1000.0;
         let now = self.now();
         let at = (now - age).min(now);
+        let round = self.behavior.round;
         self.behavior.key_pressed(at);
         self.refresh();
+        self.answer(PetState::Typing, round);
     }
 
     fn on_raw_input(&mut self, lparam: LPARAM, message_time: u32) {
@@ -709,8 +713,10 @@ impl App {
             return;
         }
         let now = self.now();
+        let round = self.behavior.round;
         self.behavior.mouse_clicked(now);
         self.refresh();
+        self.answer(PetState::MouseClick, round);
     }
 
     // MARK: Behaviour and animation
@@ -765,33 +771,57 @@ impl App {
         self.refresh();
     }
 
-    /// A line from `pool`, in a bubble over the pet's head; only while the
-    /// pet can be seen, and only as often as `PetSpeech` allows.
+    /// A line from `pool`, in a bubble over the middle of the pet's head, in
+    /// place of any still up; only while the pet can be seen.
     fn speak(&mut self, pool: &[String]) {
         if pool.is_empty() || !self.input_active {
             return;
         }
-        let now = self.now();
-        let Some(line) = self.speech.say(pool, now) else { return };
-        self.hide_bubble();
-        self.bubble = bubble::Bubble::new(self.pet, &line, self.scale);
+        let Some(line) = self.speech.say(pool) else { return };
+        match self.bubble.as_mut() {
+            Some(b) => b.set_line(&line, self.scale),
+            None => self.bubble = bubble::Bubble::new(self.pet, &line, self.scale),
+        }
         self.place_bubble();
         let ms = (PetSpeech::duration(&line) * 1000.0) as u32;
-        unsafe { SetTimer(self.host, TIMER_BUBBLE, ms, None) };
+        unsafe {
+            SetTimer(self.host, TIMER_BUBBLE, ms, None);
+            SetTimer(self.host, TIMER_BUBBLE_RISE, 15, None);
+        }
+    }
+
+    /// A click or a key while its reaction still plays starts no new round,
+    /// but is answered all the same: a new line, at once.
+    fn answer(&mut self, state: PetState, round: u64) {
+        if self.behavior.round != round || self.behavior.current != state {
+            return;
+        }
+        let Some(spec) = self.manifest.playable(state) else { return };
+        let pool = PetSpeech::pool(state, spec, spec.variant(self.behavior.variant.as_deref()));
+        self.speak(&pool);
+    }
+
+    fn on_bubble_rise(&mut self) {
+        if !self.bubble.as_mut().is_some_and(|b| b.rise()) {
+            unsafe { KillTimer(self.host, TIMER_BUBBLE_RISE) };
+        }
     }
 
     /// Points the bubble at the top of the artwork showing.
     fn place_bubble(&mut self) {
         let (w, h) = self.size;
         let top = self.current.iter().filter_map(|f| f.artwork_top()).min().unwrap_or(0);
-        let tip = (self.pos.0 + (w as f32 * 0.62) as i32, self.pos.1 + top + (4.0 * self.scale) as i32);
+        let tip = (self.pos.0 + w / 2, self.pos.1 + top + (4.0 * self.scale) as i32);
         if let Some(b) = self.bubble.as_mut() {
             b.place(tip, self.pos.1 + h);
         }
     }
 
     fn hide_bubble(&mut self) {
-        unsafe { KillTimer(self.host, TIMER_BUBBLE) };
+        unsafe {
+            KillTimer(self.host, TIMER_BUBBLE);
+            KillTimer(self.host, TIMER_BUBBLE_RISE);
+        }
         if let Some(b) = self.bubble.take() {
             b.destroy();
         }
@@ -1009,8 +1039,10 @@ impl App {
             self.apply_always_on_top();
         } else if !drag.moved_past_threshold {
             let now = self.now();
+            let round = self.behavior.round;
             self.behavior.tapped(now);
             self.refresh();
+            self.answer(PetState::Tap, round);
         }
     }
 
@@ -1175,6 +1207,9 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     }
                     TIMER_BUBBLE => {
                         with_app(|app| app.hide_bubble());
+                    }
+                    TIMER_BUBBLE_RISE => {
+                        with_app(|app| app.on_bubble_rise());
                     }
                     TIMER_REST => {
                         KillTimer(hwnd, TIMER_REST);

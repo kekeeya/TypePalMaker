@@ -163,13 +163,18 @@ final class PetController {
         view.onMouseMoved = { [weak self] in self?.handleMouseMoved() }
 
         input.onKey = { [weak self] at in
-            self?.behavior.keyPressed(at: at)
-            self?.refresh()
+            guard let self else { return }
+            let round = behavior.round
+            behavior.keyPressed(at: at)
+            refresh()
+            answer(.typing, ifStillIn: round)
         }
         input.onMouseClick = { [weak self] at in
             guard let self else { return }
+            let round = behavior.round
             behavior.mouseClicked(at: at)
             refresh()
+            answer(.mouseClick, ifStillIn: round)
         }
         input.onMouseMoved = { [weak self] in self?.handleMouseMoved() }
 
@@ -218,7 +223,7 @@ final class PetController {
         shownVariant = behavior.variant
         if entered { debugLog("state → \(state.rawValue)") }
         animator.play(state, spec: variant.map(spec.playing) ?? spec.played(as: state), restart: restart)
-        if newRound || entered { speak(PetSpeech.pool(state, spec: spec, variant: variant), at: now) }
+        if newRound || entered { speak(PetSpeech.pool(state, spec: spec, variant: variant)) }
 
         if let deadline = behavior.nextSleepDeadline(after: now) {
             sleepTimer.schedule(after: deadline - now + 0.01)
@@ -232,18 +237,27 @@ final class PetController {
         }
     }
 
-    /// A line from `pool`, in a bubble over the pet's head; only while the
-    /// pet can be seen, and only as often as `PetSpeech` allows.
-    private func speak(_ pool: [String], at time: TimeInterval) {
-        guard !pool.isEmpty, panel.isVisible, !isOccluded, let line = speech.say(from: pool, at: time) else { return }
+    /// A line from `pool`, in a bubble over the middle of the pet's head,
+    /// in place of any still up; only while the pet can be seen.
+    private func speak(_ pool: [String]) {
+        guard !pool.isEmpty, panel.isVisible, !isOccluded, let line = speech.say(from: pool) else { return }
         let box = store.boxSize
         let top = animator.currentFrames.compactMap(\.artworkTop).max() ?? box.height
-        bubble.show(line, for: PetSpeech.duration(of: line), pointingAt: CGPoint(x: box.width * 0.62, y: top - 4))
+        bubble.show(line, for: PetSpeech.duration(of: line), pointingAt: CGPoint(x: box.width / 2, y: top - 4))
+    }
+
+    /// A click or a key while its reaction still plays starts no new round,
+    /// but is answered all the same: a new line, at once.
+    private func answer(_ state: PetState, ifStillIn round: Int) {
+        guard behavior.round == round, behavior.current == state, let spec = manifest.playable(state) else { return }
+        speak(PetSpeech.pool(state, spec: spec, variant: spec.variant(behavior.variant)))
     }
 
     private func handleTap() {
+        let round = behavior.round
         behavior.tapped(at: ProcessInfo.processInfo.systemUptime)
         refresh()
+        answer(.tap, ifStillIn: round)
         panel.orderFrontRegardless()
     }
 

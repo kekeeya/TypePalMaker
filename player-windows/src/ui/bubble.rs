@@ -1,13 +1,13 @@
 //! The pet's speech bubble, as `SpeechBubble.swift` draws it on macOS: warm
-//! white, a light outline and a soft shadow, at most two lines, with a tail
+//! white with a light outline, no shadow, at most two lines, with a tail
 //! pointing at the pet's head (or up at it, when the bubble sits below).
 
 use tiny_skia::PathBuilder;
 
-use super::canvas::{Canvas, Frame, Weight, baseline_for_center, measure, rgb, rgba};
+use super::canvas::{Canvas, Frame, Weight, baseline_for_center, measure, rgb};
 use super::wrap::wrap;
 
-/// Room for the shadow around the bubble.
+/// Clear space around the bubble.
 pub const MARGIN: f32 = 12.0;
 pub const TAIL: f32 = 8.0;
 const PADDING: (f32, f32) = (14.0, 9.0);
@@ -51,8 +51,7 @@ pub fn paint(c: &mut Canvas, l: &BubbleLayout, tail_x: f32, below: bool) {
     };
     let shape = outline(body, 14.0, tail_x.min(body.max_x() - 22.0).max(body.x + 22.0), below);
 
-    // One shape, bubble and tail: one fill and one outline.
-    c.shadow(body, 14.0, 9.0, 3.0, rgba(0x333333, 0.12));
+    // One shape, bubble and tail: one fill and one outline, no shadow.
     c.fill_path(&shape, rgb(0xFFFDF7));
     c.stroke_path(&shape, 1.0, rgb(0xE6DFD6));
 

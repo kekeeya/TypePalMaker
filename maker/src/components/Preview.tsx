@@ -28,8 +28,28 @@ export function Preview({ project }: { project: Project }) {
   const sleepTimer = useRef<number | undefined>(undefined);
   const variantTimer = useRef<number | undefined>(undefined);
   const speech = useRef(new PetSpeech());
-  const [line, setLine] = useState<string | null>(null);
+  // The line up, keyed afresh for each one said so its bubble rises again.
+  const [line, setLine] = useState<{ text: string; key: number } | null>(null);
   const lineTimer = useRef<number | undefined>(undefined);
+  const lineCount = useRef(0);
+
+  /** Says a line from `pool` in place of any still up, as the runtime does. */
+  const say = useCallback((pool: string[]) => {
+    const said = speech.current.say(pool);
+    if (!said) return;
+    lineCount.current += 1;
+    setLine({ text: said, key: lineCount.current });
+    window.clearTimeout(lineTimer.current);
+    lineTimer.current = window.setTimeout(() => setLine(null), PetSpeech.duration(said) * 1000);
+  }, []);
+
+  /** A click or a key while its reaction still plays starts no new round,
+   *  but is answered all the same: a new line, at once. */
+  const answer = useCallback((s: PetState, round: number) => {
+    const spec = playable(project, s);
+    if (!spec || behavior.round !== round || behavior.current !== s) return;
+    say(PetSpeech.pool(s, spec, spec.variants?.find((v) => v.id === behavior.variant)));
+  }, [project, behavior, say]);
 
   /** Shows what the behaviour decided: a new round plays from its first
    *  frame, the round already playing carries on — as in the runtime. */
@@ -72,9 +92,11 @@ export function Preview({ project }: { project: Project }) {
     armTimers();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") return close(false);
+      const round = behavior.round;
       behavior.keyPressed(now());
       refresh();
       armTimers();
+      answer("typing", round);
     };
     window.addEventListener("keydown", onKey);
     return () => {
@@ -85,7 +107,7 @@ export function Preview({ project }: { project: Project }) {
       window.clearTimeout(lineTimer.current);
       alphaCache.clear();
     };
-  }, [behavior, refresh, close, armTimers]);
+  }, [behavior, refresh, close, armTimers, answer]);
 
   const own = playable(project, state);
   const action = own?.variants?.find((v) => v.id === shown.variant);
@@ -104,12 +126,8 @@ export function Preview({ project }: { project: Project }) {
     const newRound = spoken.current.round !== shown.round;
     spoken.current = { state, round: shown.round };
     if (!entered && !newRound) return;
-    const said = speech.current.say(PetSpeech.pool(state, own, action), now());
-    if (!said) return;
-    setLine(said);
-    window.clearTimeout(lineTimer.current);
-    lineTimer.current = window.setTimeout(() => setLine(null), PetSpeech.duration(said) * 1000);
-  }, [own, action, state, shown.round]);
+    say(PetSpeech.pool(state, own, action));
+  }, [own, action, state, shown.round, say]);
 
   const cell = useTimelinePlayer(spec, {
     restartKey: state === "idle" && !action ? "idle" : shown.round,
@@ -151,14 +169,17 @@ export function Preview({ project }: { project: Project }) {
         <div
           className="stage"
           onMouseDown={(e) => {
+            const round = behavior.round;
             if (onPet(e)) {
               behavior.tapped(now());
               refresh();
               armTimers();
+              answer("tap", round);
             } else {
               behavior.mouseClicked(now());
               refresh();
               armTimers();
+              answer("mouseClick", round);
             }
           }}
           onMouseMove={(e) => {
@@ -183,7 +204,7 @@ export function Preview({ project }: { project: Project }) {
           }}
         >
           <div ref={petRef} className="pet-box" style={{ width: box.width, height: box.height }}>
-            {line && <div className="line-bubble preview-bubble"><b>{line}</b></div>}
+            {line && <div key={line.key} className="line-bubble preview-bubble"><b>{line.text}</b></div>}
             {PET_STATES.map((s) => {
               const own = playable(project, s);
               if (!own) return null;

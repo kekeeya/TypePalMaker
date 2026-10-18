@@ -79,7 +79,7 @@ fn renders_every_screen() {
         let l = super::bubble::layout(line);
         assert!(l.lines.len() <= 2, "{name}: {} lines", l.lines.len());
         let mut c = Canvas::new(l.size.0, l.size.1, 2.0);
-        super::bubble::paint(&mut c, &l, l.size.0 * 0.75, below);
+        super::bubble::paint(&mut c, &l, l.size.0 / 2.0, below);
         save(&c, name);
     }
 }
