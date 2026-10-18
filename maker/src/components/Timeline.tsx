@@ -7,10 +7,11 @@ import { importNotice } from "../i18n/strings";
 import { IMAGE_ACCEPT, importFiles, importSideFor, type ImportResult } from "../model/imageImport";
 import { entryStartCell, trackCells } from "../model/timeline";
 import { builtInEffectFrames, effectOfRow, effectRowId, type BuiltInEffect } from "../model/template";
-import { baseTrack, frameSpan, timelineTracks, type FrameAsset, type FrameTrack } from "../model/types";
-import { useEditor } from "../store";
+import { baseTrack, frameSpan, type FrameAsset, type FrameTrack } from "../model/types";
+import { rowsIn, useEditor } from "../store";
 import { pickImages } from "./pickImages";
 import { EffectDialog } from "./EffectDialog";
+import { VariantPanel } from "./VariantPanel";
 
 const MIN_CELL = 48;
 const MAX_CELL = 104;
@@ -37,6 +38,7 @@ export function Timeline() {
   const state = useEditor((s) => s.selectedState);
   const selected = useEditor((s) => s.selectedIndex);
   const selectedTrackId = useEditor((s) => s.selectedTrackId);
+  const selectedVariantId = useEditor((s) => s.selectedVariantId);
   const { selectFrame, selectTrack, moveFrame, removeFrame, setSpan, addFrames, replaceFrame, addTrack, removeTrack, renameTrack, moveTrack } = useEditor.getState();
   const input = useRef<HTMLInputElement>(null);
   const uploadTrack = useRef<string | null>(null);
@@ -49,7 +51,11 @@ export function Timeline() {
 
   const { fps } = project;
   const spec = project.states[state];
-  const tracks = spec.tracks ?? timelineTracks(spec);
+  // The rows of the tab shown: the usual animation, or a random action.
+  const tracks = rowsIn(spec, selectedVariantId) ?? [];
+  const variant = spec.variants?.find((v) => v.id === selectedVariantId);
+  /** A random action with no pictures, not even a row of its own added. */
+  const emptyVariant = !!variant && tracks.length <= 1 && tracks.every((track) => !track.frames.length);
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? baseTrack(tracks);
   const total = Math.max(0, ...tracks.map((track) => trackCells(track, fps)));
   const selectedStart = selected === null || !selectedTrack ? 0 : entryStartCell(selectedTrack, fps, selected);
@@ -172,126 +178,149 @@ export function Timeline() {
           </div>
         </div>
       </div>
-      <div className="timeline-scroll">
-        <div className="timeline-canvas" style={{ width: cells * cell + TRACK_INSET + LABEL_WIDTH }}>
-          <div className="frame-ruler">
-            {/* Over the names column, so the ruler's cells line up with the rows'. */}
-            <span className="ruler-label-head" aria-hidden="true" />
-            {total > 0 && <span className="ruler-range" style={{ left: LABEL_WIDTH, width: total * cell }} />}
-            {Array.from({ length: cells }, (_, i) => (
-              <button
-                key={i}
-                className={i < total ? "active" : undefined}
-                tabIndex={-1}
-                onClick={() => extendTo(i)}
-              >
-                <span>{i + 1}</span>
-                {(i + 1) % fps === 0 && <b>{(i + 1) / fps}s</b>}
-              </button>
-            ))}
+      <VariantPanel state={state} />
+      {emptyVariant ? (
+        <div className="variant-empty">
+          <b>{t.emptyVariantTitle}</b>
+          <p>{t.emptyVariantBody}</p>
+          <div>
+            <button
+              className="primary-small"
+              onClick={async () => {
+                const files = await pickImages({ multiple: true, label: t.imageFiles, fallback: () => input.current?.click() });
+                if (files?.length) void add(files, tracks[0]?.id ?? null);
+              }}
+            >
+              ＋ {t.addFrames}
+            </button>
+            <button className="built-in-effect-button" onClick={() => setEffectsOpen(true)}>
+              ✦ {t.addBuiltInEffect}
+            </button>
           </div>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={({ active, over }) => {
-              if (!over || active.id === over.id) return;
-              moveTrack(state, rowIds.indexOf(String(active.id)), rowIds.indexOf(String(over.id)));
-            }}
-          >
-            <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-              {tracks.map((track, trackIndex) => {
-                const spans = track.frames.map((entry) => frameSpan(entry, fps));
-                const ids = track.frames.map((_, index) => `${track.id}-clip-${index}`);
-                const onDragEnd = ({ active, over }: DragEndEvent) => {
-                  if (!over || active.id === over.id) return;
-                  moveFrame(state, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)), track.id);
-                };
-                return (
-                  <SortableRow key={track.id} id={rowIds[trackIndex]} disabled={renaming === track.id || tracks.length < 2}>
-                    {(handle) => (
-                      <>
-                        <div className={`track-label${selectedTrack?.id === track.id ? " selected" : ""}`} {...handle}>
-                          {renaming === track.id ? (
-                            <input
-                              className="track-name-input"
-                              autoFocus
-                              maxLength={20}
-                              defaultValue={trackLabel(track, trackIndex)}
-                              aria-label={t.trackName}
-                              onFocus={(e) => e.target.select()}
-                              onBlur={(e) => {
-                                renameTrack(state, track.id, e.target.value.trim());
-                                setRenaming(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                if (e.key === "Escape") setRenaming(null);
-                              }}
-                            />
-                          ) : (
-                            <button
-                              className="track-select"
-                              title={`${trackLabel(track, trackIndex)} · ${t.renameHint}`}
-                              onClick={() => selectTrack(track.id)}
-                              onDoubleClick={() => setRenaming(track.id)}
-                            >
-                              <b>{shortName(trackLabel(track, trackIndex))}</b>
-                              <span aria-hidden="true">●</span>
-                            </button>
-                          )}
-                          <button
-                            className="delete-track"
-                            aria-label={t.deleteTrackNamed(trackLabel(track, trackIndex))}
-                            title={t.deleteTrack}
-                            onClick={() => removeTrack(state, track.id)}
-                          >
-                            <svg viewBox="0 0 16 16" aria-hidden="true">
-                              <path d="M5.25 5.75v6m2.75-6v6m2.75-6v6M3.5 3.5h9M6 3.5V2.25h4V3.5m1.5 0-.45 10H4.95l-.45-10" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </button>
-                        </div>
-                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                          <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
-                            <div className="frame-track">
-                              {track.frames.map((entry, i) => (
-                                <FrameClip
-                                  key={ids[i]}
-                                  id={ids[i]}
-                                  index={i}
-                                  asset={project.frames[entry.id]}
-                                  span={spans[i]}
-                                  selected={selectedTrack?.id === track.id && selected === i}
-                                  labels={{ frames: t.frames(spans[i]), remove: t.deleteFrame, extend: t.extendFrame }}
-                                  onSelect={() => { selectTrack(track.id); selectFrame(i); }}
-                                  onResize={(e) => beginResize(e, track, i)}
-                                  onRemove={() => removeFrame(state, i, track.id)}
-                                  onReplace={(files) => void replace(track.id, i, files)}
-                                />
-                              ))}
-                              <button
-                                className="append-frame"
-                                aria-label={`${trackLabel(track, trackIndex)} ${t.addFrames}`}
-                                onClick={async () => {
-                                  selectTrack(track.id);
-                                  uploadTrack.current = track.id;
-                                  const files = await pickImages({ multiple: true, label: t.imageFiles, fallback: () => input.current?.click() });
-                                  if (files?.length) void add(files, track.id);
-                                }}
-                              >
-                                <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                              </button>
-                            </div>
-                          </SortableContext>
-                        </DndContext>
-                      </>
-                    )}
-                  </SortableRow>
-                );
-              })}
-            </SortableContext>
-          </DndContext>
         </div>
-      </div>
+      ) : (
+        <div className="timeline-scroll">
+          <div className="timeline-canvas" style={{ width: cells * cell + TRACK_INSET + LABEL_WIDTH }}>
+            <div className="frame-ruler">
+              {/* Over the names column, so the ruler's cells line up with the rows'. */}
+              <span className="ruler-label-head" aria-hidden="true" />
+              {total > 0 && <span className="ruler-range" style={{ left: LABEL_WIDTH, width: total * cell }} />}
+              {Array.from({ length: cells }, (_, i) => (
+                <button
+                  key={i}
+                  className={i < total ? "active" : undefined}
+                  tabIndex={-1}
+                  onClick={() => extendTo(i)}
+                >
+                  <span>{i + 1}</span>
+                  {(i + 1) % fps === 0 && <b>{(i + 1) / fps}s</b>}
+                </button>
+              ))}
+            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={({ active, over }) => {
+                if (!over || active.id === over.id) return;
+                moveTrack(state, rowIds.indexOf(String(active.id)), rowIds.indexOf(String(over.id)));
+              }}
+            >
+              <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                {tracks.map((track, trackIndex) => {
+                  const spans = track.frames.map((entry) => frameSpan(entry, fps));
+                  const ids = track.frames.map((_, index) => `${track.id}-clip-${index}`);
+                  const onDragEnd = ({ active, over }: DragEndEvent) => {
+                    if (!over || active.id === over.id) return;
+                    moveFrame(state, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)), track.id);
+                  };
+                  return (
+                    <SortableRow key={track.id} id={rowIds[trackIndex]} disabled={renaming === track.id || tracks.length < 2}>
+                      {(handle) => (
+                        <>
+                          <div className={`track-label${selectedTrack?.id === track.id ? " selected" : ""}`} {...handle}>
+                            {renaming === track.id ? (
+                              <input
+                                className="track-name-input"
+                                autoFocus
+                                maxLength={20}
+                                defaultValue={trackLabel(track, trackIndex)}
+                                aria-label={t.trackName}
+                                onFocus={(e) => e.target.select()}
+                                onBlur={(e) => {
+                                  renameTrack(state, track.id, e.target.value.trim());
+                                  setRenaming(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                  if (e.key === "Escape") setRenaming(null);
+                                }}
+                              />
+                            ) : (
+                              <button
+                                className="track-select"
+                                title={`${trackLabel(track, trackIndex)} · ${t.renameHint}`}
+                                onClick={() => selectTrack(track.id)}
+                                onDoubleClick={() => setRenaming(track.id)}
+                              >
+                                <b>{shortName(trackLabel(track, trackIndex))}</b>
+                                <span aria-hidden="true">●</span>
+                              </button>
+                            )}
+                            <button
+                              className="delete-track"
+                              aria-label={t.deleteTrackNamed(trackLabel(track, trackIndex))}
+                              title={t.deleteTrack}
+                              onClick={() => removeTrack(state, track.id)}
+                            >
+                              <svg viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M5.25 5.75v6m2.75-6v6m2.75-6v6M3.5 3.5h9M6 3.5V2.25h4V3.5m1.5 0-.45 10H4.95l-.45-10" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
+                          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                            <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
+                              <div className="frame-track">
+                                {track.frames.map((entry, i) => (
+                                  <FrameClip
+                                    key={ids[i]}
+                                    id={ids[i]}
+                                    index={i}
+                                    asset={project.frames[entry.id]}
+                                    span={spans[i]}
+                                    selected={selectedTrack?.id === track.id && selected === i}
+                                    labels={{ frames: t.frames(spans[i]), remove: t.deleteFrame, extend: t.extendFrame }}
+                                    onSelect={() => { selectTrack(track.id); selectFrame(i); }}
+                                    onResize={(e) => beginResize(e, track, i)}
+                                    onRemove={() => removeFrame(state, i, track.id)}
+                                    onReplace={(files) => void replace(track.id, i, files)}
+                                  />
+                                ))}
+                                <button
+                                  className="append-frame"
+                                  aria-label={`${trackLabel(track, trackIndex)} ${t.addFrames}`}
+                                  onClick={async () => {
+                                    selectTrack(track.id);
+                                    uploadTrack.current = track.id;
+                                    const files = await pickImages({ multiple: true, label: t.imageFiles, fallback: () => input.current?.click() });
+                                    if (files?.length) void add(files, track.id);
+                                  }}
+                                >
+                                  <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                                </button>
+                                {variant && !track.frames.length && track === baseTrack(tracks) && <span className="row-hint">{t.usesRegular}</span>}
+                              </div>
+                            </SortableContext>
+                          </DndContext>
+                        </>
+                      )}
+                    </SortableRow>
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
+          </div>
+        </div>
+      )}
       {effectsOpen && <EffectDialog busy={addingEffect} onCancel={() => setEffectsOpen(false)} onPick={(e) => void addEffect(e)} />}
       <input
         ref={input}

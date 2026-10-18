@@ -6,6 +6,7 @@ import { DEFAULT_ICON_STYLE, PET_STATES, type FrameAsset, type PetState } from "
 import { useEditor } from "../store";
 import { IconDialog, IconPreview, useCrop, useIconSource } from "./IconDialog";
 import { NavIcon } from "./NavIcon";
+import { Stepper } from "./Stepper";
 import { pickImages } from "./pickImages";
 
 /** "通用": the pet's name and icon, and which reactions it has. */
@@ -79,11 +80,18 @@ export function GeneralPage({ onOpenState }: { onOpenState: (state: PetState) =>
             {PET_STATES.map((state) => {
               const spec = project.states[state];
               const minutes = spec.sleepAfterMinutes ?? 15;
+              const actions = spec.variants?.length ?? 0;
+              const hasLines = !!spec.lines?.length || !!spec.variants?.some((v) => v.lines.length);
               return (
                 <div key={state} className={`reaction-item${state === "sleep" && spec.enabled ? " sleep-open" : ""}`}>
                   <div className="reaction-row" role="button" tabIndex={0} onClick={() => onOpenState(state)} onKeyDown={(e) => e.key === "Enter" && onOpenState(state)}>
                     <NavIcon kind={state} />
-                    <b>{t.stateNames[state]}</b>
+                    <span className="reaction-name">
+                      <b>{t.stateNames[state]}</b>
+                      {(actions > 0 || hasLines) && (
+                        <span className={`variant-badge${hasLines ? " with-lines" : ""}`}>{t.variantsBadge(actions, hasLines)}</span>
+                      )}
+                    </span>
                     {state === "idle" ? (
                       <em className="required">{t.required}</em>
                     ) : (
@@ -104,11 +112,15 @@ export function GeneralPage({ onOpenState }: { onOpenState: (state: PetState) =>
                   {state === "sleep" && spec.enabled && (
                     <div className="sleep-delay">
                       <span>{t.sleepIdleFor}</span>
-                      <div className="minute-stepper">
-                        <button aria-label={t.fewerMinutes} title={t.fewerMinutes} onClick={() => setSleepAfterMinutes(minutes - 1)}>−</button>
-                        <MinuteInput minutes={minutes} onCommit={setSleepAfterMinutes} label={t.minutesThenSleep} />
-                        <button aria-label={t.moreMinutes} title={t.moreMinutes} onClick={() => setSleepAfterMinutes(minutes + 1)}>+</button>
-                      </div>
+                      <Stepper
+                        value={minutes}
+                        min={1}
+                        max={1440}
+                        onChange={setSleepAfterMinutes}
+                        label={t.minutesThenSleep}
+                        fewer={t.fewerMinutes}
+                        more={t.moreMinutes}
+                      />
                       <span>{t.minutesThenSleep}</span>
                     </div>
                   )}
@@ -140,29 +152,5 @@ export function GeneralPage({ onOpenState }: { onOpenState: (state: PetState) =>
         </div>
       </div>
     </main>
-  );
-}
-
-/** The minutes as typed: a number from 1 to 1440 is taken as it is entered;
- *  while the field is empty or out of range it is left alone, and leaving it
- *  puts back the value in use. */
-function MinuteInput({ minutes, onCommit, label }: { minutes: number; onCommit: (minutes: number) => void; label: string }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <input
-      type="number"
-      min="1"
-      max="1440"
-      aria-label={label}
-      value={draft ?? String(minutes)}
-      onChange={(e) => {
-        const value = e.target.value;
-        setDraft(value);
-        const n = Number(value);
-        if (value !== "" && Number.isInteger(n) && n >= 1 && n <= 1440) onCommit(n);
-      }}
-      onBlur={() => setDraft(null)}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-    />
   );
 }

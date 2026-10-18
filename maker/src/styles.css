@@ -792,6 +792,9 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .reaction-row .cute-nav-icon { width: 34px; height: 32px; border-radius: 50%; transform: none; }
 .reaction-row .cute-nav-icon svg { width: 26px; height: 26px; }
 .reaction-row b { font-size: 14px; font-weight: 700; }
+.reaction-name { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.variant-badge { padding: 3px 9px; border-radius: 7px; background: var(--purple-pale); color: var(--purple-text); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.variant-badge.with-lines { background: #fff3cf; color: #6b5626; }
 .required { font-style: normal; font-size: 10px; color: var(--ink-soft); background: #efecec; border-radius: 6px; padding: 2px 8px; margin-right: 2px; }
 .row-chevron { width: 6px; height: 10px; color: var(--ink-soft); }
 .switch {
@@ -860,7 +863,7 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 /* Scrolls once the preview is zoomed past the panel; the margins keep it
    centred while it fits. The paper may pass between the toolbar's ends. */
 .canvas-viewport { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: auto; padding: 12px 24px; }
-.canvas-paper { margin: auto; flex: none; padding: 20px; border-radius: 14px; background: #fcfbf9; box-shadow: 0 14px 30px rgba(80, 66, 50, 0.1); }
+.canvas-paper { position: relative; margin: auto; flex: none; padding: 20px; border-radius: 14px; background: #fcfbf9; box-shadow: 0 14px 30px rgba(80, 66, 50, 0.1); }
 .canvas-paper .pet-box { position: relative; overflow: hidden; outline: 1.5px dashed #8c88d8; outline-offset: -1px; }
 
 .inspector { padding: 14px 16px 16px; display: flex; flex-direction: column; overflow-y: auto; }
@@ -964,8 +967,8 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .canvas-zoom .zoom-reset { width: auto; padding: 0 10px; border-radius: 13px; font-size: 11px; }
 .frame-zoom input[type="range"]::-webkit-slider-thumb { width: 8px; height: 8px; border: 0; box-shadow: none; opacity: 0; }
 
-/* Three rows show; more scroll. */
-.timeline-scroll { flex: 1; min-height: 0; max-height: calc(43px + 3 * 105px + 12px); padding-bottom: 12px; overflow: auto; border-top: 1px solid #eee9e3; }
+/* Two rows show (the tabs and their settings sit above); more scroll. */
+.timeline-scroll { flex: 1; min-height: 0; max-height: calc(43px + 2 * 105px + 12px); padding-bottom: 12px; overflow: auto; border-top: 1px solid #eee9e3; }
 .timeline-canvas {
   position: relative;
   min-height: 100%;
@@ -1148,3 +1151,54 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
   overflow: hidden;
 }
 .stage .pet-box { position: relative; }
+
+/* A reaction's tabs (its usual animation, then its random actions) and the
+   selected tab's settings, between the timeline's title and its rows. */
+.variant-panel { flex: none; border-top: 1px solid #eee9e3; }
+.variant-tabs { height: 44px; padding: 0 16px; display: flex; align-items: center; gap: 8px; overflow-x: auto; background: #fffcf4; border-bottom: 1px solid #f0ebe2; }
+.variant-tab { flex: none; height: 30px; display: flex; align-items: center; border: 1px solid #e6dfd6; border-radius: 10px; background: #fff; color: var(--ink); font-size: 12px; font-weight: 700; }
+.variant-tab > button[role="tab"], .variant-tab.regular { height: 100%; display: flex; align-items: center; gap: 6px; padding: 0 12px; color: inherit; font-weight: 700; }
+.variant-tab small { padding: 1px 6px; border-radius: 6px; background: #efecec; color: var(--ink-soft); font-size: 9px; font-weight: 700; }
+.variant-tab.selected { border-color: var(--purple); background: var(--purple); color: #fff; box-shadow: 0 2px 0 rgba(70, 60, 150, 0.25); }
+.variant-tab.selected small { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.variant-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; }
+.variant-tab[aria-roledescription] { cursor: grab; touch-action: none; }
+.variant-tab.dragging { z-index: 2; cursor: grabbing; box-shadow: 0 8px 18px rgba(80, 66, 50, 0.18); }
+.variant-delete { width: 0; overflow: hidden; height: 18px; margin-right: 0; border-radius: 50%; background: #fbe3e0; color: #c4675d; font-size: 11px; line-height: 18px; transition: width .12s ease, margin .12s ease; }
+.variant-tab:hover .variant-delete, .variant-delete:focus-visible { width: 18px; margin-right: 6px; }
+.variant-name-input { width: 96px; height: 24px; margin: 0 4px; padding: 0 6px; border: 1.5px solid var(--purple-line); border-radius: 7px; font-size: 12px; font-weight: 700; color: var(--ink); }
+.variant-add { flex: none; height: 30px; padding: 0 12px; border: 1.5px dashed #cfc6ef; border-radius: 10px; background: #f8f6ff; color: var(--purple-text); font-size: 11px; font-weight: 700; }
+.variant-settings { padding: 0 16px; }
+.variant-row { min-height: 44px; display: flex; align-items: center; gap: 14px; font-size: 11px; }
+.variant-row + .variant-row { border-top: 1px dashed #ebe6e0; }
+.variant-row > b { flex: none; min-width: 64px; font-size: 12px; font-weight: 700; color: var(--ink); }
+.no-frequency { padding: 2px 8px; border-radius: 6px; background: #efecec; color: var(--ink-soft); font-size: 10px; font-weight: 600; }
+.frequency { min-width: 0; display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
+.segmented { flex: none; height: 30px; display: flex; overflow: hidden; border: 1px solid #ddd6ee; border-radius: 10px; background: #fff; }
+.segmented button { padding: 0 14px; font-size: 11px; font-weight: 700; color: var(--ink); }
+.segmented button + button { border-left: 1px solid #ebe6f3; }
+.segmented button.on { background: var(--purple-pale); color: var(--purple-text); }
+.link-button { flex: none; color: var(--purple-text); font-size: 11px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.frequency-custom { height: 34px; padding: 0 10px 0 12px; display: flex; align-items: center; gap: 8px; border: 1px solid #ebe6e0; border-radius: 11px; background: #faf8f5; font-weight: 600; white-space: nowrap; }
+.minute-stepper button:disabled { opacity: .35; cursor: default; }
+.lines { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 6px 0; }
+.line-chip { flex: none; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; border: 1px solid #ddd6ee; border-radius: 8px; background: #f5f2ff; color: var(--ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.line-chip button { width: 16px; height: 16px; border-radius: 50%; color: var(--ink-soft); font-size: 12px; line-height: 16px; }
+.line-chip button:hover { background: #e6e0f6; }
+.line-add { flex: none; width: 26px; height: 26px; border: 1.5px dashed #cfc6ef; border-radius: 8px; color: var(--purple-text); font-weight: 700; }
+.line-add:disabled { opacity: .5; cursor: default; }
+.line-input { flex: none; width: 176px; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1.5px dashed #d8d1ee; border-radius: 9px; background: #fff; }
+.line-input input { min-width: 0; flex: 1; border: 0; outline: 0; background: none; font-size: 11px; color: var(--ink); }
+.line-input small { flex: none; color: var(--ink-soft); font-size: 9px; }
+/* A random action with nothing of its own yet. */
+.variant-empty { flex: 1; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-top: 1px solid #eee9e3; text-align: center; }
+.variant-empty b { font-size: 14px; font-weight: 700; }
+.variant-empty p { margin: 0 0 10px; color: var(--ink-soft); font-size: 11px; }
+.variant-empty div { display: flex; gap: 10px; }
+.primary-small { height: 34px; padding: 0 14px; border-radius: 11px; background: var(--purple); color: #fff; font-size: 11px; font-weight: 700; box-shadow: 0 3px 0 #5d55b8; }
+/* A line the pet may say, over the preview's top-right corner. */
+.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; max-width: 180px; padding: 8px 12px 9px; display: grid; gap: 3px; border: 1px solid #e6dfd6; border-radius: 14px; background: #fffdf7; box-shadow: 0 8px 18px rgba(80, 66, 50, 0.14); pointer-events: none; }
+.line-bubble::after { content: ""; position: absolute; left: 34px; bottom: -7px; width: 12px; height: 12px; border-right: 1px solid #e6dfd6; border-bottom: 1px solid #e6dfd6; background: #fffdf7; transform: rotate(45deg); }
+.line-bubble b { font-size: 12px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-bubble small { font-size: 9px; color: var(--ink-soft); font-weight: 600; }
+.row-hint { align-self: center; margin-left: 12px; color: var(--ink-soft); font-size: 11px; font-weight: 600; white-space: nowrap; }

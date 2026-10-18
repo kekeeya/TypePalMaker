@@ -26,6 +26,74 @@ export interface StateSpec {
   tracks?: FrameTrack[];
   /** Minutes without keyboard or mouse activity before sleep starts. */
   sleepAfterMinutes?: number;
+  /** Lines the pet may say when this reaction plays as usual. */
+  lines?: string[];
+  /** Random actions: other animations played now and then instead. */
+  variants?: StateVariant[];
+}
+
+/**
+ * A random action of a reaction: its own rows (none with pictures: the
+ * reaction's usual animation), lines to say, and how often it comes. A
+ * looping reaction (idle, sleep) plays it once every `every` seconds, a
+ * random time in the range; any other plays it instead of the usual
+ * animation with probability `chance`.
+ */
+export interface StateVariant {
+  id: string;
+  name: string;
+  tracks: FrameTrack[];
+  lines: string[];
+  every?: [number, number];
+  chance?: number;
+}
+
+/** The three ready-made frequencies of a random action. */
+export const FREQUENCIES = {
+  /** Seconds between two plays of a looping reaction's action. */
+  every: { rare: [2700, 3600], sometimes: [300, 600], often: [60, 180] } as Record<Frequency, [number, number]>,
+  /** Chance a triggered reaction plays the action instead. */
+  chance: { rare: 0.1, sometimes: 0.2, often: 0.4 } as Record<Frequency, number>,
+};
+export type Frequency = "rare" | "sometimes" | "often";
+/** Lines are short; a pool holds a handful. */
+export const LINE_MAX_CHARS = 30;
+export const LINES_PER_POOL = 20;
+
+/** Whether a reaction loops (and so times its random actions) or plays
+ *  once per trigger (and so rolls for them). */
+export function loops(state: PetState): boolean {
+  return state === "idle" || state === "sleep";
+}
+
+/** A new random action for a reaction, coming "sometimes". */
+export function newVariant(state: PetState, id: string, name: string): StateVariant {
+  return {
+    id,
+    name,
+    tracks: [{ id: "main", name: "", frames: [] }],
+    lines: [],
+    ...(loops(state) ? { every: FREQUENCIES.every.sometimes } : { chance: FREQUENCIES.chance.sometimes }),
+  };
+}
+
+/** Whether an action has pictures of its own; without, it plays the
+ *  reaction's usual animation. */
+export function hasOwnFrames(variant: StateVariant): boolean {
+  return variant.tracks.some((track) => track.frames.length > 0);
+}
+
+/**
+ * The rows an action plays. Its pet row left empty is the reaction's usual
+ * animation, under the action's other rows (an effect added to an action
+ * plays over the pet as it is); an action with no pictures at all is the
+ * usual animation.
+ */
+export function variantRows(spec: StateSpec, variant: StateVariant): FrameTrack[] {
+  if (!hasOwnFrames(variant)) return timelineTracks(spec);
+  const base = baseTrack(variant.tracks);
+  if (!base || base.frames.length) return variant.tracks;
+  return [...variant.tracks.filter((track) => track !== base), ...timelineTracks(spec)];
 }
 
 export interface FrameTrack {
@@ -185,8 +253,14 @@ export function timelineTracks(spec: StateSpec): FrameTrack[] {
   return spec.tracks?.length ? spec.tracks : [{ id: "main", name: "", frames: spec.frames }];
 }
 
-export function allStateFrames(spec: StateSpec): FrameEntry[] {
+/** The frames of a reaction's own rows: what makes it playable. */
+export function ownFrames(spec: StateSpec): FrameEntry[] {
   return timelineTracks(spec).flatMap((track) => track.frames);
+}
+
+/** Every frame a reaction shows: its rows and its random actions'. */
+export function allStateFrames(spec: StateSpec): FrameEntry[] {
+  return [...timelineTracks(spec), ...(spec.variants ?? []).flatMap((variant) => variant.tracks)].flatMap((track) => track.frames);
 }
 
 export function hasPlacement(entry: FrameEntry): boolean {

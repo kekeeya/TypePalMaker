@@ -1,10 +1,10 @@
-import { allStateFrames, PET_STATES, type PetState, type Project, type StateSpec } from "./types";
+import { ownFrames, PET_STATES, type PetState, type Project, type StateSpec } from "./types";
 
 /** A spec the pet may show: switched on and with at least one frame. Same
  *  rule as `PetManifest.playable` in the runtime. */
 export function playable(project: Project, state: PetState): StateSpec | null {
   const spec = project.states[state];
-  return spec.enabled && allStateFrames(spec).length > 0 ? spec : null;
+  return spec.enabled && ownFrames(spec).length > 0 ? spec : null;
 }
 
 export type Issue = { kind: "noName" } | { kind: "idleEmpty" } | { kind: "stateEmpty"; state: PetState };
@@ -17,7 +17,7 @@ export function validate(project: Project): Issue[] {
   if (!playable(project, "idle")) issues.push({ kind: "idleEmpty" });
   for (const state of PET_STATES) {
     const spec = project.states[state];
-    if (state !== "idle" && spec.enabled && allStateFrames(spec).length === 0) issues.push({ kind: "stateEmpty", state });
+    if (state !== "idle" && spec.enabled && ownFrames(spec).length === 0) issues.push({ kind: "stateEmpty", state });
   }
   return issues;
 }

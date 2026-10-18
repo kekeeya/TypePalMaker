@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../i18n/useT";
 import { useEditor } from "../store";
 import { entryAtCell, entryStartCell } from "../model/timeline";
-import { baseTrack, timelineTracks } from "../model/types";
+import { baseTrack, timelineTracks, variantRows } from "../model/types";
 import { FrameStack, useTimelinePlayer } from "./Sprite";
 
 /** The canvas's longer side on screen, at most; less when the window is
@@ -34,6 +34,7 @@ export function CanvasView() {
   const state = useEditor((s) => s.selectedState);
   const index = useEditor((s) => s.selectedIndex);
   const trackId = useEditor((s) => s.selectedTrackId);
+  const variantId = useEditor((s) => s.selectedVariantId);
   const [playing, setPlaying] = useState(false);
   const section = useRef<HTMLElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -70,7 +71,14 @@ export function CanvasView() {
     el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
   }, [zoom]);
 
-  const spec = project.states[state];
+  const own = project.states[state];
+  const variant = own.variants?.find((v) => v.id === variantId);
+  // The tab shown, as it plays (see `variantRows`).
+  const spec = useMemo(() => (variant ? { ...own, frames: [], tracks: variantRows(own, variant) } : own), [own, variant]);
+  const lines = variant ? variant.lines : (own.lines ?? []);
+  // One of the tab's lines, picked again when the tab or its lines change.
+  const lineKey = `${state}|${variantId}|${lines.join("\n")}`;
+  const line = useMemo(() => lines[Math.floor(Math.random() * lines.length)], [lineKey]);
   // Memoised: a fresh object each render would read as a new state and keep
   // restarting the animation from its first frame.
   // The editor's play button loops every reaction, play-once ones too, so
@@ -109,7 +117,7 @@ export function CanvasView() {
           <div className="pet-box checker" style={{ width: canvas.width * ratio, height: canvas.height * ratio }}>
             {tracks.map((track, trackIndex) => (
               <FrameStack
-                key={track.id}
+                key={`${trackIndex}-${track.id}`}
                 frames={project.frames}
                 entries={track.frames}
                 shown={entryAtCell(track, project.fps, selectedCell)?.index ?? -1}
@@ -119,6 +127,12 @@ export function CanvasView() {
               />
             ))}
           </div>
+          {line && (
+            <div className="line-bubble">
+              <b>{line}</b>
+              <small>{t.linePreview}</small>
+            </div>
+          )}
         </div>
       </div>
     </section>

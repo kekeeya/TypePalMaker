@@ -117,3 +117,48 @@ describe("rows on every reaction", () => {
     expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["sleep-effects", "main"]);
   });
 });
+
+describe("random actions", () => {
+  beforeEach(() => editor().loadProject(emptyProject("a")));
+
+  it("edits the selected action's rows, not the usual animation's", () => {
+    editor().addFrames("idle", [asset("x")]);
+    editor().addVariant("idle", "小动作 1");
+    const id = editor().selectedVariantId!;
+    expect(editor().project.states.idle.variants?.[0]).toMatchObject({ name: "小动作 1", every: [300, 600], lines: [] });
+    editor().addFrames("idle", [asset("y")]);
+    editor().addTrack("idle", "", "sleep-effects", true);
+    expect(editor().project.states.idle.variants?.[0].tracks.map((t) => [t.id, t.frames.map((f) => f.id)])).toEqual([
+      ["sleep-effects", []],
+      ["main", ["y"]],
+    ]);
+    expect(editor().project.states.idle.tracks?.map((t) => t.frames.map((f) => f.id))).toEqual([["x"]]);
+    expect(editor().project.frames.y).toBeDefined();
+
+    editor().selectVariant(null);
+    expect(editor().selectedTrackId).toBe("main");
+    editor().removeVariant("idle", id);
+    expect(editor().project.frames.y).toBeUndefined();
+    editor().undo();
+    expect(editor().project.states.idle.variants).toHaveLength(1);
+    expect(editor().project.frames.y).toBeDefined();
+  });
+
+  it("rolls for actions of a triggered reaction, and keeps lines per tab", () => {
+    editor().selectState("typing");
+    editor().addVariant("typing", "小动作 1");
+    const id = editor().selectedVariantId!;
+    expect(editor().project.states.typing.variants?.[0].chance).toBe(0.2);
+    editor().setVariantFrequency("typing", id, { chance: 0.4 });
+    editor().setLines("typing", id, ["敲得飞快"]);
+    editor().setLines("typing", null, ["加油"]);
+    expect(editor().project.states.typing.variants?.[0]).toMatchObject({ chance: 0.4, lines: ["敲得飞快"] });
+    expect(editor().project.states.typing.lines).toEqual(["加油"]);
+  });
+
+  it("goes back to the usual animation when undo takes the shown action away", () => {
+    editor().addVariant("idle", "小动作 1");
+    editor().undo();
+    expect(editor().selectedVariantId).toBeNull();
+  });
+});

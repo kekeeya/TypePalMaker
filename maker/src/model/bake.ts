@@ -1,7 +1,7 @@
 import { renderIcon } from "./icon";
 import { drawPlaced, placement } from "./placement";
 import { assetFromBytes } from "./projectFile";
-import { DEFAULT_ICON_STYLE, hasPlacement, PET_STATES, type FrameAsset, type FrameEntry, type PetState, type Project, type StateSpec } from "./types";
+import { DEFAULT_ICON_STYLE, hasPlacement, variantRows, PET_STATES, type FrameAsset, type FrameEntry, type FrameTrack, type PetState, type Project, type StateSpec } from "./types";
 
 /**
  * The project as the pet will show it: every frame drawn into a picture the
@@ -57,10 +57,15 @@ export async function bakeProject(project: Project): Promise<Project> {
     for (const state of PET_STATES) {
       const spec = project.states[state];
       const entries = await bakeEntries(spec.frames);
-      const tracks = spec.tracks
-        ? await Promise.all(spec.tracks.map(async (track) => ({ ...track, frames: await bakeEntries(track.frames) })))
+      const bakeTracks = (tracks: FrameTrack[]) =>
+        Promise.all(tracks.map(async (track) => ({ ...track, frames: await bakeEntries(track.frames) })));
+      const tracks = spec.tracks ? await bakeTracks(spec.tracks) : undefined;
+      // Each action as it plays, the usual rows filled in where it leaves
+      // them to the reaction (see `variantRows`): the pet just plays rows.
+      const variants = spec.variants
+        ? await Promise.all(spec.variants.map(async (variant) => ({ ...variant, tracks: await bakeTracks(variantRows(spec, variant)) })))
         : undefined;
-      states[state] = { ...spec, fps: project.fps, frames: entries, tracks };
+      states[state] = { ...spec, fps: project.fps, frames: entries, tracks, variants };
     }
   } finally {
     for (const image of decoded.values()) image.close();

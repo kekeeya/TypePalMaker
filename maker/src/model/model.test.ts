@@ -225,6 +225,32 @@ describe("project file", () => {
     expect(manifest.states.idle).toEqual({ enabled: true, fps: 8, loop: true, frames: ["a", { id: "a", duration: 625 }] });
   });
 
+  it("keeps random actions and lines", async () => {
+    const p = emptyProject("x");
+    p.frames.a = { id: "a", name: "a", png: new Uint8Array([1]), width: 1, height: 1, url: "" };
+    p.frameOrder = ["a"];
+    p.states.idle = withFrames(p.states.idle, [{ id: "a" }]);
+    p.states.idle.lines = ["被你发现啦！"];
+    p.states.idle.variants = [
+      { id: "v-1", name: "伸懒腰", tracks: [{ id: "main", name: "", frames: [{ id: "a", duration: 250 }] }], lines: ["好困…"], every: [60, 180] },
+    ];
+    p.states.typing.variants = [{ id: "v-2", name: "飞快", tracks: [{ id: "main", name: "", frames: [] }], lines: [], chance: 0.4 }];
+    const back = await decodeProject(encodeProject(p));
+    expect(back.states.idle.lines).toEqual(["被你发现啦！"]);
+    expect(back.states.idle.variants).toEqual(p.states.idle.variants);
+    expect(back.states.typing.variants).toEqual(p.states.typing.variants);
+  });
+
+  it("reads random actions as the editor allows them", async () => {
+    const p = emptyProject("x");
+    p.states.idle.variants = [{ id: "v-1", name: "n", tracks: [], lines: [], every: [90, 30] }];
+    p.states.typing.variants = [{ id: "v-2", name: "n", tracks: [], lines: ["  ", "x".repeat(40)], chance: 3 }];
+    const back = await decodeProject(encodeProject(p));
+    expect(back.states.idle.variants?.[0].every).toEqual([300, 600]);
+    expect(back.states.typing.variants?.[0].chance).toBe(1);
+    expect(back.states.typing.variants?.[0].lines).toEqual(["x".repeat(30)]);
+  });
+
   it("keeps an intentionally empty sleep timeline empty", async () => {
     const p = emptyProject("x");
     p.states.sleep.tracks = [];

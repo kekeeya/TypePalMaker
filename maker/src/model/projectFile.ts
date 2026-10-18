@@ -9,6 +9,10 @@ import {
   newId,
   baseTrack,
   withTracks,
+  FREQUENCIES,
+  LINE_MAX_CHARS,
+  LINES_PER_POOL,
+  loops,
   FPS_LIMITS,
   frameSpan,
   PET_STATES,
@@ -22,6 +26,7 @@ import {
   type PetState,
   type Project,
   type StateSpec,
+  type StateVariant,
 } from "./types";
 
 /**
@@ -49,13 +54,20 @@ interface ManifestJSON {
     fps: number;
     loop: boolean;
     frames: ManifestFrame[];
-    tracks?: { id: string; name: string; frames: ManifestFrame[] }[];
+    tracks?: ManifestTrack[];
     sleepAfterMinutes?: number;
+    lines?: string[];
+    variants?: { id: string; name: string; tracks: ManifestTrack[]; lines?: string[]; every?: number[]; chance?: number }[];
   }>>;
 }
 
 export function encodeProject(project: Project): Uint8Array {
   const used = new Set(project.frameOrder);
+  const writeTrack = (track: FrameTrack): ManifestTrack => ({
+    id: track.id,
+    name: track.name,
+    frames: track.frames.filter((f) => used.has(f.id)).map(compactEntry),
+  });
   const manifest: ManifestJSON = {
     schemaVersion: 1,
     name: project.name,
@@ -87,14 +99,19 @@ export function encodeProject(project: Project): Uint8Array {
       fps: project.fps,
       loop: !PLAYS_ONCE[state],
       frames: own.filter((f) => used.has(f.id)).map(compactEntry),
-      ...(spec.tracks !== undefined && !plain ? {
-        tracks: spec.tracks.map((track) => ({
-          id: track.id,
-          name: track.name,
-          frames: track.frames.filter((f) => used.has(f.id)).map(compactEntry),
+      ...(spec.tracks !== undefined && !plain ? { tracks: spec.tracks.map(writeTrack) } : {}),
+      ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
+      ...(spec.lines?.length ? { lines: spec.lines } : {}),
+      ...(spec.variants?.length ? {
+        variants: spec.variants.map((variant) => ({
+          id: variant.id,
+          name: variant.name,
+          tracks: variant.tracks.map(writeTrack),
+          ...(variant.lines.length ? { lines: variant.lines } : {}),
+          ...(variant.every ? { every: variant.every } : {}),
+          ...(variant.chance !== undefined ? { chance: variant.chance } : {}),
         })),
       } : {}),
-      ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
     };
   }
   if (project.icon) files["icon.png"] = project.icon.png;
@@ -104,6 +121,18 @@ export function encodeProject(project: Project): Uint8Array {
   return zipSync(
     Object.fromEntries(Object.entries(files).map(([k, v]) => [k, [v, { level: k.endsWith(".png") ? 0 : 6 }]])),
   );
+}
+
+type ManifestTrack = { id: string; name: string; frames: ManifestFrame[] };
+
+/** Lines as the editor allows them: short, non-empty, a handful. */
+function readLines(lines: unknown): string[] {
+  if (!Array.isArray(lines)) return [];
+  return lines
+    .filter((line): line is string => typeof line === "string")
+    .map((line) => Array.from(line.trim()).slice(0, LINE_MAX_CHARS).join(""))
+    .filter(Boolean)
+    .slice(0, LINES_PER_POOL);
 }
 
 /** A bare id when there is nothing else to say, as the runtime allows. */
@@ -146,25 +175,35 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
     const spec = manifest.states?.[state];
     if (!spec) continue;
     const ownStep = 1000 / (spec.fps > 0 ? spec.fps : fps);
+    const readEntries = (list: ManifestFrame[] | undefined) =>
+      (list ?? [])
+        .map((f): FrameEntry => (typeof f === "string" ? { id: f } : { ...f }))
+        .filter((f) => frames[f.id])
+        .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) }));
+    const readTrack = (track: ManifestTrack): FrameTrack => ({ id: track.id, name: track.name ?? "", frames: readEntries(track.frames) });
     states[state] = {
       enabled: spec.enabled,
       fps,
       loop: !PLAYS_ONCE[state],
-      frames: (spec.frames ?? [])
-        .map((f): FrameEntry => (typeof f === "string" ? { id: f } : { ...f }))
-        .filter((f) => frames[f.id])
-        .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) })),
-      ...(spec.tracks !== undefined ? {
-        tracks: spec.tracks.map((track): FrameTrack => ({
-          id: track.id,
-          name: track.name ?? "",
-          frames: (track.frames ?? [])
-            .map((f): FrameEntry => typeof f === "string" ? { id: f } : { ...f })
-            .filter((f) => frames[f.id])
-            .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) })),
-        })),
-      } : {}),
+      frames: readEntries(spec.frames),
+      ...(spec.tracks !== undefined ? { tracks: spec.tracks.map(readTrack) } : {}),
       ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
+      ...(readLines(spec.lines).length ? { lines: readLines(spec.lines) } : {}),
+      ...(spec.variants?.length ? {
+        variants: spec.variants.map((variant): StateVariant => {
+          const every = variant.every;
+          const timed = Array.isArray(every) && every.length === 2 && every[0] > 0 && every[0] <= every[1];
+          return {
+            id: String(variant.id),
+            name: variant.name ?? "",
+            tracks: (variant.tracks ?? []).map(readTrack),
+            lines: readLines(variant.lines),
+            ...(loops(state)
+              ? { every: timed ? [every[0], every[1]] : FREQUENCIES.every.sometimes }
+              : { chance: Number.isFinite(variant.chance) ? Math.min(1, Math.max(0, variant.chance!)) : FREQUENCIES.chance.sometimes }),
+          };
+        }),
+      } : {}),
     };
     if (state !== "sleep") states[state] = withTracks(states[state]);
     else if (states.sleep.tracks === undefined) {
