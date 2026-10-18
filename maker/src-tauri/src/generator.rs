@@ -178,10 +178,10 @@ fn write_frames(
     for state in STATES {
         let Some(spec) = states_in.get(state) else { continue };
         let mut entries = spec["frames"].as_array().cloned().unwrap_or_default();
-        if let Some(tracks) = spec["tracks"].as_array() {
-            for track in tracks {
-                entries.extend(track["frames"].as_array().cloned().unwrap_or_default());
-            }
+        // The reaction's rows, then its random actions'.
+        let variant_tracks = spec["variants"].as_array().into_iter().flatten().filter_map(|v| v["tracks"].as_array()).flatten();
+        for track in spec["tracks"].as_array().into_iter().flatten().chain(variant_tracks) {
+            entries.extend(track["frames"].as_array().cloned().unwrap_or_default());
         }
         let enabled = spec["enabled"].as_bool().unwrap_or(false) && !entries.is_empty();
         if state == "idle" && !enabled {

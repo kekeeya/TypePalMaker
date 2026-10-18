@@ -134,6 +134,22 @@ function mascotProject(name = "TypePal 小团子"): Uint8Array {
   };
   const typing = states.typing as { frames: string[] };
   states.typing = { ...typing, tracks: [{ id: "sleep-effects", name: "", frames: zs }, { id: "main", name: "", frames: typing.frames }] };
+  // A random action over idle, with lines; typing says something too.
+  const sparkles = ["sparkle-01", "sparkle-02", "sparkle-03", "sparkle-04"];
+  for (const id of sparkles) {
+    files[`frames/${id}.png`] = new Uint8Array(readFileSync(join(dir, `${id}.png`)));
+    frames[id] = { file: `frames/${id}.png` };
+  }
+  const idle = states.idle as { frames: string[] };
+  states.idle = {
+    ...idle,
+    variants: [{
+      id: "v-sparkle", name: "亮晶晶",
+      tracks: [{ id: "effect-sparkle", name: "", frames: sparkles }, { id: "main", name: "", frames: idle.frames }],
+      lines: ["今天也要加油哦", "好困…"], every: [60, 180],
+    }],
+  };
+  states.typing = { ...(states.typing as object), lines: ["敲得飞快！"] };
   files["icon.png"] = files["frames/idle-01.png"];
   files["manifest.json"] = strToU8(JSON.stringify({ schemaVersion: 1, name, id: "web-smoke", display: { height: 192 }, frames, states }));
   return zipSync(files);
@@ -184,6 +200,8 @@ describe.skipIf(!haveTemplate)("building from the real template", () => {
     expect(manifest.states.sleep.tracks).toHaveLength(2);
     expect(pet["frames/sleep-z-01.png"]).toBeDefined();
     expect(pet["frames/sleep-base-01.png"]).toBeDefined();
+    expect(manifest.states.idle.variants[0].lines).toEqual(["今天也要加油哦", "好困…"]);
+    expect(pet["frames/sparkle-01.png"]).toBeDefined();
     expect(Data.RawIconItem).toBeDefined();
 
     // CI on Windows launches it, as it does the pet the Rust packer makes.

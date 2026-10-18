@@ -29,6 +29,18 @@ final class PetController {
         publishStroke()
     }
     private var isOccluded = false
+    /// What the animator was last told to show, to tell a new round, a new
+    /// reaction and a random action starting or ending apart.
+    private var shownState: PetState?
+    private var shownVariant: String?
+    private var speech = PetSpeech()
+    private lazy var bubble = SpeechBubble(pet: panel)
+    /// Fires when idle's or sleep's next random action is due.
+    private lazy var variantTimer = ReusableTimer(tolerance: 0.5) { [weak self] in
+        guard let self else { return }
+        behavior.checkVariants(at: ProcessInfo.processInfo.systemUptime)
+        refresh()
+    }
     /// Every half hour, and a minute after the pet stops being seen, what is
     /// not needed right now is let go (as the Windows pet does).
     private lazy var housekeepingTimer = ReusableTimer(tolerance: 60) { [weak self] in
@@ -197,14 +209,36 @@ final class PetController {
         let state = behavior.current
         guard let spec = manifest.playable(state) else { return }
         let newRound = behavior.round != shownRound
+        let entered = state != shownState
+        let variant = spec.variant(behavior.variant)
+        // Idle carries on across rounds, except into and out of an action.
+        let restart = newRound && (state != .idle || behavior.variant != shownVariant)
         shownRound = behavior.round
-        if state != animator.state { debugLog("state → \(state.rawValue)") }
-        animator.play(state, spec: spec.played(as: state), restart: newRound && state != .idle)
+        shownState = state
+        shownVariant = behavior.variant
+        if entered { debugLog("state → \(state.rawValue)") }
+        animator.play(state, spec: variant.map(spec.playing) ?? spec.played(as: state), restart: restart)
+        if newRound || entered { speak(PetSpeech.pool(state, spec: spec, variant: variant, entered: entered), at: now) }
+
         if let deadline = behavior.nextSleepDeadline(after: now) {
             sleepTimer.schedule(after: deadline - now + 0.01)
         } else {
             sleepTimer.cancel()
         }
+        if let deadline = behavior.nextVariantDeadline(after: now) {
+            variantTimer.schedule(after: deadline - now + 0.01)
+        } else {
+            variantTimer.cancel()
+        }
+    }
+
+    /// A line from `pool`, in a bubble over the pet's head; only while the
+    /// pet can be seen, and only as often as `PetSpeech` allows.
+    private func speak(_ pool: [String], at time: TimeInterval) {
+        guard !pool.isEmpty, panel.isVisible, !isOccluded, let line = speech.say(from: pool, at: time) else { return }
+        let box = store.boxSize
+        let top = animator.currentFrames.compactMap(\.artworkTop).max() ?? box.height
+        bubble.show(line, for: PetSpeech.duration(of: line), pointingAt: CGPoint(x: box.width * 0.62, y: top - 4))
     }
 
     private func handleTap() {
@@ -235,6 +269,7 @@ final class PetController {
         } else {
             input.stop()
             animator.pause()
+            bubble.hide()
             restTimer.schedule(after: 60)
         }
         debugLog(active ? "active" : "paused")
@@ -295,6 +330,7 @@ final class PetController {
     // MARK: Size & position
 
     private func resize() {
+        bubble.hide()
         let oldFrame = panel.frame
         store.configure(
             scale: Preferences.scale,

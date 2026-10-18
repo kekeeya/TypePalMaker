@@ -53,6 +53,31 @@ public struct FrameTrack: Decodable, Equatable, Sendable {
     }
 }
 
+/// A random action of a reaction: rows of its own, lines to say, and how
+/// often it comes. A looping reaction (idle, sleep) plays it once every
+/// `every` seconds, a random time in the range; any other plays it instead
+/// of its usual animation with probability `chance`. Rows with no pictures
+/// at all mean the usual animation.
+public struct StateVariant: Decodable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let tracks: [FrameTrack]
+    public let lines: [String]?
+    public let every: [Double]?
+    public let chance: Double?
+
+    public init(id: String, name: String = "", tracks: [FrameTrack], lines: [String]? = nil, every: [Double]? = nil, chance: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.tracks = tracks
+        self.lines = lines
+        self.every = every
+        self.chance = chance
+    }
+
+    public var hasOwnFrames: Bool { tracks.contains { !$0.frames.isEmpty } }
+}
+
 public struct StateSpec: Decodable, Equatable, Sendable {
     public let enabled: Bool
     public let fps: Double
@@ -60,6 +85,9 @@ public struct StateSpec: Decodable, Equatable, Sendable {
     public let frames: [FrameEntry]
     public let tracks: [FrameTrack]?
     public let sleepAfterMinutes: Double?
+    /// Lines the pet may say when the reaction plays as usual.
+    public let lines: [String]?
+    public let variants: [StateVariant]?
 
     public init(
         enabled: Bool,
@@ -67,7 +95,9 @@ public struct StateSpec: Decodable, Equatable, Sendable {
         loop: Bool,
         frames: [FrameEntry],
         tracks: [FrameTrack]? = nil,
-        sleepAfterMinutes: Double? = nil
+        sleepAfterMinutes: Double? = nil,
+        lines: [String]? = nil,
+        variants: [StateVariant]? = nil
     ) {
         self.enabled = enabled
         self.fps = fps
@@ -75,6 +105,26 @@ public struct StateSpec: Decodable, Equatable, Sendable {
         self.frames = frames
         self.tracks = tracks
         self.sleepAfterMinutes = sleepAfterMinutes
+        self.lines = lines
+        self.variants = variants
+    }
+
+    /// How a random action plays: once, on its own rows, or the usual ones
+    /// if it has no pictures.
+    public func playing(_ variant: StateVariant) -> StateSpec {
+        StateSpec(
+            enabled: enabled,
+            fps: fps,
+            loop: false,
+            frames: [],
+            tracks: variant.hasOwnFrames ? variant.tracks : timelineTracks,
+            sleepAfterMinutes: sleepAfterMinutes,
+            lines: variant.lines
+        )
+    }
+
+    public func variant(_ id: String?) -> StateVariant? {
+        id.flatMap { id in variants?.first { $0.id == id } }
     }
 
     public var timelineTracks: [FrameTrack] {
@@ -101,7 +151,9 @@ public struct StateSpec: Decodable, Equatable, Sendable {
             loop: state == .idle || state == .sleep,
             frames: frames,
             tracks: tracks,
-            sleepAfterMinutes: sleepAfterMinutes
+            sleepAfterMinutes: sleepAfterMinutes,
+            lines: lines,
+            variants: variants
         )
     }
 }
@@ -159,9 +211,12 @@ public struct PetManifest: Decodable, Sendable {
         return spec
     }
 
-    /// Every frame id referenced by a playable state.
+    /// Every frame id referenced by a playable state, its random actions'
+    /// included.
     public var usedFrameIDs: Set<String> {
-        Set(PetState.allCases.compactMap(playable).flatMap { $0.allFrames.map(\.id) })
+        Set(PetState.allCases.compactMap(playable).flatMap { spec in
+            (spec.allFrames + (spec.variants ?? []).flatMap { $0.tracks.flatMap(\.frames) }).map(\.id)
+        })
     }
 
     public func validate() throws {
@@ -181,7 +236,7 @@ public struct PetManifest: Decodable, Sendable {
             guard spec.fps > 0 else {
                 throw ManifestError("状态 \(state.rawValue) 的 fps 必须大于 0", "State \(state.rawValue) needs an fps greater than 0")
             }
-            for entry in spec.allFrames where frames[entry.id] == nil {
+            for entry in spec.allFrames + (spec.variants ?? []).flatMap({ $0.tracks.flatMap(\.frames) }) where frames[entry.id] == nil {
                 throw ManifestError("状态 \(state.rawValue) 引用了不存在的帧：\(entry.id)", "State \(state.rawValue) uses a missing frame: \(entry.id)")
             }
             if state == .sleep, (spec.sleepAfterMinutes ?? 15) <= 0 {

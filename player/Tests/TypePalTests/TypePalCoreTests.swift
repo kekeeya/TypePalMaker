@@ -335,3 +335,94 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(wide, CGRect(x: 0, y: 0, width: 200, height: 50))
     }
 }
+
+final class RandomActionTests: XCTestCase {
+    private let frame = [FrameEntry(id: "f")]
+
+    /// Idle with one action due every 60–120 s; typing with one at 25%.
+    private func behavior(random: @escaping () -> Double) -> PetBehavior {
+        let stretch = StateVariant(id: "stretch", tracks: [FrameTrack(id: "main", name: "", frames: frame + frame)], lines: ["好困…"], every: [60, 120])
+        let fast = StateVariant(id: "fast", tracks: [], chance: 0.25)
+        return PetBehavior(playable: { state in
+            switch state {
+            case .idle: StateSpec(enabled: true, fps: 10, loop: true, frames: self.frame, variants: [stretch])
+            case .typing: StateSpec(enabled: true, fps: 10, loop: false, frames: self.frame, variants: [fast])
+            default: nil
+            }
+        }, random: random)
+    }
+
+    func testIdlePlaysItsActionWhenDueThenLoopsAsUsual() {
+        var b = behavior { 0.5 }
+        b.activity(at: 0)
+        // Typing in between keeps idle's time: 60 + 0.5 × 60 = 90 s.
+        b.keyPressed(at: 1)
+        b.roundFinished(at: 1.1)
+        XCTAssertEqual(b.nextVariantDeadline(after: 2), 90)
+        b.checkVariants(at: 50)
+        XCTAssertNil(b.variant)
+        let round = b.round
+        b.checkVariants(at: 90)
+        XCTAssertEqual(b.variant, "stretch")
+        XCTAssertGreaterThan(b.round, round)
+        XCTAssertNil(b.nextVariantDeadline(after: 91), "nothing else is due while it plays")
+        b.roundFinished(at: 90.2)
+        XCTAssertEqual(b.current, .idle)
+        XCTAssertNil(b.variant)
+        XCTAssertEqual(b.nextVariantDeadline(after: 91), 180.2)
+    }
+
+    func testAPetLeftIdleFromTheStartStillPlaysItsActions() {
+        var b = behavior { 0.5 }
+        b.activity(at: 0)
+        XCTAssertEqual(b.nextVariantDeadline(after: 0), 90)
+        b.activity(at: 30)
+        XCTAssertEqual(b.nextVariantDeadline(after: 30), 90, "moving the mouse does not put it off")
+    }
+
+    func testAKeyCutsAnIdleActionShort() {
+        var b = behavior { 0 }
+        b.activity(at: 0)
+        b.checkInactivity(at: 0)
+        b.keyPressed(at: 0)
+        b.roundFinished(at: 0.1)
+        b.checkVariants(at: 60.1)
+        XCTAssertEqual(b.variant, "stretch")
+        b.keyPressed(at: 60.15)
+        XCTAssertEqual(b.current, .typing)
+    }
+
+    func testTypingRollsForItsAction() {
+        var low = behavior { 0.2 }
+        low.keyPressed(at: 0)
+        XCTAssertEqual(low.variant, "fast", "0.2 is under the 25% chance")
+        var high = behavior { 0.3 }
+        high.keyPressed(at: 0)
+        XCTAssertNil(high.variant)
+        XCTAssertEqual(high.current, .typing)
+    }
+
+    func testSpeechKeepsQuietAndDoesNotRepeat() {
+        var speech = PetSpeech { 0 }
+        XCTAssertEqual(speech.say(from: ["a", "b"], at: 0), "a")
+        // "a" is up for 2.5 s, then 10 s of quiet.
+        XCTAssertNil(speech.say(from: ["a", "b"], at: 12))
+        XCTAssertEqual(speech.say(from: ["a", "b"], at: 12.5), "b")
+        XCTAssertNil(speech.say(from: [], at: 100))
+        XCTAssertEqual(PetSpeech.duration(of: String(repeating: "字", count: 30)), 6)
+    }
+
+    func testWhatARoundMaySay() {
+        let spec = StateSpec(enabled: true, fps: 10, loop: true, frames: frame, lines: ["hi"])
+        let action = StateVariant(id: "v", tracks: [], lines: ["yawn"])
+        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: nil, entered: true), ["hi"])
+        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: nil, entered: false), [])
+        XCTAssertEqual(PetSpeech.pool(.typing, spec: spec, variant: nil, entered: false), ["hi"])
+        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: action, entered: false), ["yawn"])
+    }
+
+    func testAnActionWithoutPicturesPlaysTheUsualRows() {
+        let spec = StateSpec(enabled: true, fps: 10, loop: true, frames: frame)
+        XCTAssertEqual(spec.playing(StateVariant(id: "v", tracks: [FrameTrack(id: "main", name: "", frames: [])])).timelineTracks.first?.frames, frame)
+    }
+}

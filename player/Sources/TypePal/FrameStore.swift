@@ -46,6 +46,17 @@ final class DecodedFrame {
         return false
     }
 
+    /// The top of the visible artwork, in box coordinates: where a speech
+    /// bubble points. Nil for a frame with nothing visible.
+    var artworkTop: CGFloat? {
+        let mask = alphaMask ?? makeAlphaMask()
+        let width = image.width
+        guard width > 0, let row = (0..<image.height).first(where: { y in
+            (0..<width).contains { mask[y * width + $0] > 24 }
+        }) else { return nil }
+        return rect.maxY - CGFloat(row) / CGFloat(image.height) * rect.height
+    }
+
     /// Built on first hit test only: most frames are never probed.
     private func makeAlphaMask() -> [UInt8] {
         let width = image.width

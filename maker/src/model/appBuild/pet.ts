@@ -33,7 +33,12 @@ export async function readPet(
     id: string;
     display: { height: number };
     frames: Record<string, { file: string }>;
-    states: Record<string, { enabled: boolean; frames: (string | { id: string })[]; tracks?: { frames: (string | { id: string })[] }[] }>;
+    states: Record<string, {
+      enabled: boolean;
+      frames: (string | { id: string })[];
+      tracks?: { frames: (string | { id: string })[] }[];
+      variants?: { tracks: { frames: (string | { id: string })[] }[] }[];
+    }>;
   };
   const name = manifest.name.trim();
   if (!name) throw new Error("no-name");
@@ -43,7 +48,9 @@ export async function readPet(
   for (const state of STATES) {
     const spec = manifest.states[state];
     if (!spec?.enabled) continue;
-    const entries = [...spec.frames, ...(spec.tracks ?? []).flatMap((track) => track.frames)];
+    // The reaction's rows and its random actions'.
+    const rows = [...(spec.tracks ?? []), ...(spec.variants ?? []).flatMap((variant) => variant.tracks)];
+    const entries = [...spec.frames, ...rows.flatMap((track) => track.frames)];
     if (!entries.length) continue;
     for (const entry of entries) used.add(typeof entry === "string" ? entry : entry.id);
   }
