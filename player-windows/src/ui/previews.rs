@@ -73,6 +73,8 @@ fn renders_every_screen() {
         ("bubble-two-lines", "今天也要加油哦，做累了就休息一下…再坚持一会儿", false),
         ("bubble-long", "Keep going today, and take a break when you are tired, then keep going", false),
         ("bubble-below", "被你发现啦！", true),
+        ("bubble-one", "1", false),
+        ("bubble-123", "123", false),
     ] {
         let l = super::bubble::layout(line);
         assert!(l.lines.len() <= 2, "{name}: {} lines", l.lines.len());

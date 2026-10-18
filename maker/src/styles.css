@@ -1200,7 +1200,7 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 /* The tail continues the bubble's outline: an outline-coloured triangle
    just under the border, and a paper one over it that also covers the
    border where the tail opens out of the bubble. */
-.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; max-width: 180px; padding: 8px 12px 9px; display: grid; gap: 3px; border: 1px solid #e0d7cb; border-radius: 14px; background: #fffdf7; filter: drop-shadow(0 6px 9px rgba(80, 66, 50, 0.16)); pointer-events: none; }
+.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; min-width: 76px; max-width: 180px; padding: 8px 12px 9px; display: grid; gap: 3px; text-align: center; border: 1px solid #e0d7cb; border-radius: 14px; background: #fffdf7; filter: drop-shadow(0 6px 9px rgba(80, 66, 50, 0.16)); pointer-events: none; }
 .line-bubble::before, .line-bubble::after { content: ""; position: absolute; border-style: solid; border-color: transparent; }
 .line-bubble::before { left: 33px; bottom: -10px; border-width: 10px 9px 0; border-top-color: #e0d7cb; }
 .line-bubble::after { left: 34px; bottom: -8.5px; border-width: 9px 8px 0; border-top-color: #fffdf7; }

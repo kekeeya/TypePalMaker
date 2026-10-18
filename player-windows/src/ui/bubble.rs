@@ -14,6 +14,9 @@ const PADDING: (f32, f32) = (14.0, 9.0);
 const MAX_TEXT: f32 = 200.0;
 const SIZE: f32 = 13.0;
 const LINE: f32 = 18.0;
+/// Never narrower than this, so the tail always leaves from the flat of the
+/// bottom edge, clear of the corners, however short the line ("1").
+const MIN_BODY: f32 = 76.0;
 
 pub struct BubbleLayout {
     pub lines: Vec<String>,
@@ -33,7 +36,7 @@ pub fn layout(line: &str) -> BubbleLayout {
         lines.push(format!("{}…", second.trim_end()));
     }
     let width = lines.iter().map(|l| measure(l, SIZE, Weight::Semibold)).fold(0.0, f32::max).ceil();
-    let size = (width + 2.0 * PADDING.0 + 2.0 * MARGIN, lines.len() as f32 * LINE + 2.0 * PADDING.1 + TAIL + 2.0 * MARGIN);
+    let size = ((width + 2.0 * PADDING.0).max(MIN_BODY) + 2.0 * MARGIN, lines.len() as f32 * LINE + 2.0 * PADDING.1 + TAIL + 2.0 * MARGIN);
     BubbleLayout { lines, size }
 }
 
@@ -46,7 +49,7 @@ pub fn paint(c: &mut Canvas, l: &BubbleLayout, tail_x: f32, below: bool) {
     } else {
         Frame::new(MARGIN, MARGIN, w - 2.0 * MARGIN, h - 2.0 * MARGIN - TAIL)
     };
-    let shape = outline(body, 14.0, tail_x.clamp(body.x + 22.0, body.max_x() - 22.0), below);
+    let shape = outline(body, 14.0, tail_x.min(body.max_x() - 22.0).max(body.x + 22.0), below);
 
     // One shape, bubble and tail: one fill and one outline.
     c.shadow(body, 14.0, 9.0, 3.0, rgba(0x333333, 0.12));
@@ -55,7 +58,9 @@ pub fn paint(c: &mut Canvas, l: &BubbleLayout, tail_x: f32, below: bool) {
 
     for (i, text) in l.lines.iter().enumerate() {
         let mid = body.y + PADDING.1 + LINE * (i as f32 + 0.5);
-        c.text(text, body.x + PADDING.0, baseline_for_center(mid, SIZE, Weight::Semibold), SIZE, Weight::Semibold, rgb(0x353754));
+        // Centred: a short line sits in the middle of the narrowest bubble.
+        let x = body.mid_x() - measure(text, SIZE, Weight::Semibold) / 2.0;
+        c.text(text, x, baseline_for_center(mid, SIZE, Weight::Semibold), SIZE, Weight::Semibold, rgb(0x353754));
     }
 }
 

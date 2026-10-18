@@ -82,10 +82,14 @@ final class BubbleView: NSView {
     private static let tailHeight: CGFloat = 8
     private static let padding = NSSize(width: 14, height: 9)
     private static let maxTextWidth: CGFloat = 200
+    /// Never narrower than this, so the tail always leaves from the flat of
+    /// the bottom edge, clear of the corners, however short the line ("1").
+    private static let minBodyWidth: CGFloat = 76
 
     init(line: String) {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byWordWrapping
+        style.alignment = .center
         text = NSAttributedString(string: line, attributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor(srgbRed: 0.208, green: 0.216, blue: 0.329, alpha: 1),
@@ -96,7 +100,7 @@ final class BubbleView: NSView {
         let bounds = text.boundingRect(with: NSSize(width: Self.maxTextWidth, height: lineHeight * 2), options: [.usesLineFragmentOrigin, .usesFontLeading])
         let textSize = NSSize(width: ceil(min(bounds.width, Self.maxTextWidth)), height: min(ceil(bounds.height), lineHeight * 2))
         let size = NSSize(
-            width: textSize.width + Self.padding.width * 2 + Self.margin * 2,
+            width: max(textSize.width + Self.padding.width * 2, Self.minBodyWidth) + Self.margin * 2,
             height: textSize.height + Self.padding.height * 2 + Self.tailHeight + Self.margin * 2
         )
         super.init(frame: NSRect(origin: .zero, size: size))
