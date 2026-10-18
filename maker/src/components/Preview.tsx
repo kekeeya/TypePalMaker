@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { useT } from "../i18n/useT";
 import { PetBehavior, playedAs, StrokeRecognizer, StrokeTuning } from "../model/behavior";
 import { fitRect } from "../model/placement";
-import { PET_STATES, type FrameAsset, type PetState, type Project } from "../model/types";
+import { entryAtCell } from "../model/timeline";
+import { PET_STATES, timelineTracks, type FrameAsset, type PetState, type Project } from "../model/types";
 import { playable } from "../model/validate";
 import { useEditor } from "../store";
-import { FrameStack, useFramePlayer } from "./Sprite";
+import { FrameStack, useTimelinePlayer } from "./Sprite";
 
 const now = () => performance.now() / 1000;
 
@@ -24,6 +25,7 @@ export function Preview({ project }: { project: Project }) {
   const [shown, setShown] = useState<{ state: PetState; round: number }>({ state: "idle", round: 0 });
   const state = shown.state;
   const settle = useRef<number | undefined>(undefined);
+  const sleepTimer = useRef<number | undefined>(undefined);
 
   /** Shows what the behaviour decided: a new round plays from its first
    *  frame, the round already playing carries on — as in the runtime. */
@@ -35,40 +37,62 @@ export function Preview({ project }: { project: Project }) {
     [behavior],
   );
 
+  const armSleep = useCallback(() => {
+    window.clearTimeout(sleepTimer.current);
+    const current = now();
+    const deadline = behavior.nextSleepDeadline(current);
+    if (deadline === null) return;
+    sleepTimer.current = window.setTimeout(() => {
+      behavior.checkInactivity(now());
+      refresh();
+    }, Math.max(0, deadline - current) * 1000 + 10);
+  }, [behavior, refresh]);
+
   useEffect(() => {
+    behavior.activity(now());
+    armSleep();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") return close(false);
       behavior.keyPressed(now());
       refresh();
+      armSleep();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.clearTimeout(settle.current);
+      window.clearTimeout(sleepTimer.current);
       alphaCache.clear();
     };
-  }, [behavior, refresh, close]);
+  }, [behavior, refresh, close, armSleep]);
 
   const own = playable(project, state);
   // Memoised per round: a fresh object would read as a new round.
   const spec = useMemo(() => (own ? playedAs(own, state) : null), [own, state]);
-  const index = useFramePlayer(spec, {
+  const cell = useTimelinePlayer(spec, {
     restartKey: state === "idle" ? "idle" : shown.round,
     onFinished: () => {
       behavior.roundFinished(now());
       refresh();
+      armSleep();
     },
   });
-  const frame = spec ? project.frames[spec.frames[index]?.id] : undefined;
+  const visibleFrames = spec
+    ? timelineTracks(spec).flatMap((track) => {
+        const entry = entryAtCell(track, project.fps, cell)?.entry;
+        const frame = entry && project.frames[entry.id];
+        return frame ? [frame] : [];
+      })
+    : [];
   const box = { width: (project.canvas.width * 72) / project.canvas.dpi, height: (project.canvas.height * 72) / project.canvas.dpi };
   const petRef = useRef<HTMLDivElement>(null);
 
   /** On the artwork itself, not the transparent space around it. */
   const onPet = (e: MouseEvent) => {
     const el = petRef.current;
-    if (!el || !frame) return false;
+    if (!el || !visibleFrames.length) return false;
     const r = el.getBoundingClientRect();
-    return isOpaque(frame, box, e.clientX - r.left, e.clientY - r.top);
+    return visibleFrames.some((frame) => isOpaque(frame, box, e.clientX - r.left, e.clientY - r.top));
   };
 
   return (
@@ -88,12 +112,16 @@ export function Preview({ project }: { project: Project }) {
             if (onPet(e)) {
               behavior.tapped(now());
               refresh();
+              armSleep();
             } else {
               behavior.mouseClicked(now());
               refresh();
+              armSleep();
             }
           }}
           onMouseMove={(e) => {
+            behavior.activity(now());
+            armSleep();
             const r = stroke.current;
             if (e.buttons !== 0) r.reset();
             else r.track(e.screenX, onPet(e), now());
@@ -115,18 +143,19 @@ export function Preview({ project }: { project: Project }) {
           <div ref={petRef} className="pet-box" style={{ width: box.width, height: box.height }}>
             {PET_STATES.map((s) => {
               const own = playable(project, s);
-              return (
-                own && (
-                  <FrameStack
-                    key={s}
-                    frames={project.frames}
-                    entries={own.frames}
-                    shown={s === state ? index : -1}
-                    canvas={project.canvas}
-                    ratio={box.width / project.canvas.width}
-                  />
-                )
-              );
+              if (!own) return null;
+              const tracks = timelineTracks(own);
+              return tracks.map((track, trackIndex) => (
+                <FrameStack
+                  key={`${s}-${track.id}`}
+                  frames={project.frames}
+                  entries={track.frames}
+                  shown={s === state ? entryAtCell(track, project.fps, cell)?.index ?? -1 : -1}
+                  canvas={project.canvas}
+                  ratio={box.width / project.canvas.width}
+                  style={{ zIndex: tracks.length - trackIndex }}
+                />
+              ));
             })}
           </div>
         </div>

@@ -3,6 +3,9 @@ import { defaultLang, rememberLang, type Lang } from "./i18n/strings";
 import type { ImportedFrame } from "./model/imageImport";
 import {
   emptyProject,
+  allStateFrames,
+  baseTrack,
+  newId,
   PET_STATES,
   spanDuration,
   type FrameAsset,
@@ -10,6 +13,7 @@ import {
   type IconStyle,
   type PetState,
   type Project,
+  type StateSpec,
 } from "./model/types";
 
 type Placement = Pick<FrameEntry, "scale" | "offsetX" | "offsetY" | "rotation">;
@@ -26,6 +30,8 @@ interface EditorState {
   selectedState: PetState;
   /** Index into the selected state's frames, or null when nothing is picked. */
   selectedIndex: number | null;
+  /** The selected row. Null means the pet's own row. */
+  selectedTrackId: string | null;
   previewOpen: boolean;
   /** A message for the user, shown as a dialog by the app. */
   notice: { title: string; body?: string } | null;
@@ -44,18 +50,29 @@ interface EditorState {
   setIcon(icon: FrameAsset | undefined, style: IconStyle): void;
 
   selectState(state: PetState): void;
+  selectTrack(trackId: string): void;
   selectFrame(index: number | null): void;
   setEnabled(state: PetState, enabled: boolean): void;
+  setSleepAfterMinutes(minutes: number): void;
+  /** A blank row goes under the others; an effect (`onTop`) over them. `id` names a built-in kind of row. */
+  addTrack(state: PetState, name?: string, id?: string, onTop?: boolean): void;
+  /** Runs several edits as one undoable step. */
+  batch(run: () => void): void;
+  removeTrack(state: PetState, trackId: string): void;
+  /** Moves a row up or down; the first row is drawn over the others. */
+  moveTrack(state: PetState, from: number, to: number): void;
+  /** An empty name puts back the row's default one. */
+  renameTrack(state: PetState, trackId: string, name: string): void;
 
   /** Adds uploaded pictures to the end of a state. */
-  addFrames(state: PetState, frames: ImportedFrame[]): void;
+  addFrames(state: PetState, frames: ImportedFrame[], trackId?: string | null): void;
   /** Swaps the picture of one frame, keeping its length and placement. */
-  replaceFrame(state: PetState, index: number, asset: FrameAsset): void;
-  removeFrame(state: PetState, index: number): void;
-  moveFrame(state: PetState, from: number, to: number): void;
+  replaceFrame(state: PetState, index: number, asset: FrameAsset, trackId?: string | null): void;
+  removeFrame(state: PetState, index: number, trackId?: string | null): void;
+  moveFrame(state: PetState, from: number, to: number, trackId?: string | null): void;
   /** How many timeline frames the picture holds. */
-  setSpan(state: PetState, index: number, span: number): void;
-  setPlacement(state: PetState, index: number, placement: Placement): void;
+  setSpan(state: PetState, index: number, span: number, trackId?: string | null): void;
+  setPlacement(state: PetState, index: number, placement: Placement, trackId?: string | null): void;
 
   setPreviewOpen(open: boolean): void;
   setNotice(notice: { title: string; body?: string } | null): void;
@@ -64,7 +81,7 @@ interface EditorState {
 
 /** Drops uploads no frame uses any more, so they are not saved forever. */
 function prune(project: Project): Project {
-  const used = new Set(PET_STATES.flatMap((s) => project.states[s].frames.map((f) => f.id)));
+  const used = new Set(PET_STATES.flatMap((s) => allStateFrames(project.states[s]).map((f) => f.id)));
   if (project.frameOrder.every((id) => used.has(id))) return project;
   const frames = { ...project.frames };
   for (const id of project.frameOrder) if (!used.has(id)) delete frames[id];
@@ -94,6 +111,8 @@ function collect(projects: Project[]) {
 
 export const useEditor = create<EditorState>()((set, get) => {
   let lastMerge: { key: string; at: number } | null = null;
+  /** Inside `batch`: whether its first edit has been recorded. */
+  let batching: { recorded: boolean } | null = null;
 
   /** Applies a change to the project as one undoable step — or as part of
    *  the previous one, for repeated changes with the same `mergeKey`. */
@@ -102,23 +121,46 @@ export const useEditor = create<EditorState>()((set, get) => {
     const next = change(project);
     if (next === project) return;
     const now = Date.now();
-    const merge = !!mergeKey && lastMerge?.key === mergeKey && now - lastMerge.at < MERGE_MS && past.length > 0;
+    const merge =
+      (batching?.recorded || (!!mergeKey && lastMerge?.key === mergeKey && now - lastMerge.at < MERGE_MS)) && past.length > 0;
+    if (batching) batching.recorded = true;
     lastMerge = mergeKey ? { key: mergeKey, at: now } : null;
     const nextPast = merge ? past : [...past, project].slice(-HISTORY_LIMIT);
     set({ project: next, past: nextPast, future: [], revision: revision + 1 });
     collect([next, ...nextPast]);
   };
 
-  const editFrames = (state: PetState, change: (frames: FrameEntry[], project: Project) => FrameEntry[], mergeKey?: string) =>
+  /** The row an edit lands on: the one asked for, else the pet's own. */
+  const rowOf = (spec: StateSpec, trackId: string | null | undefined) =>
+    spec.tracks?.find((track) => track.id === trackId) ?? (spec.tracks && baseTrack(spec.tracks));
+
+  const editFrames = (
+    state: PetState,
+    trackId: string | null | undefined,
+    change: (frames: FrameEntry[], project: Project) => FrameEntry[],
+    mergeKey?: string,
+  ) =>
     edit(
-      (p) => prune({ ...p, states: { ...p.states, [state]: { ...p.states[state], frames: change(p.states[state].frames, p) } } }),
+      (p) => {
+        const spec = p.states[state];
+        const row = rowOf(spec, trackId);
+        if (spec.tracks && row) {
+          const tracks = spec.tracks.map((track) =>
+            track === row ? { ...track, frames: change(track.frames, p) } : track,
+          );
+          const base = baseTrack(tracks)?.frames ?? [];
+          return prune({ ...p, states: { ...p.states, [state]: { ...spec, frames: base, tracks } } });
+        }
+        return prune({ ...p, states: { ...p.states, [state]: { ...spec, frames: change(spec.frames, p) } } });
+      },
       mergeKey,
     );
 
   /** Keeps the selection on a frame that still exists. */
   const clampSelection = (project: Project) => {
     const { selectedState, selectedIndex } = get();
-    const count = project.states[selectedState].frames.length;
+    const spec = project.states[selectedState];
+    const count = (rowOf(spec, get().selectedTrackId)?.frames ?? spec.frames).length;
     return count === 0 ? null : Math.min(selectedIndex ?? 0, count - 1);
   };
 
@@ -126,6 +168,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     project: emptyProject(""),
     selectedState: "idle",
     selectedIndex: null,
+    selectedTrackId: null,
     previewOpen: false,
     notice: null,
     lang: defaultLang(),
@@ -140,7 +183,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         past: [],
         future: [],
         selectedState: "idle",
-        selectedIndex: project.states.idle.frames.length ? 0 : null,
+        selectedTrackId: project.states.idle.tracks?.[0]?.id ?? null,
+        selectedIndex: (project.states.idle.tracks?.[0]?.frames ?? project.states.idle.frames).length ? 0 : null,
         revision: get().revision + 1,
       });
       collect([project]);
@@ -167,60 +211,149 @@ export const useEditor = create<EditorState>()((set, get) => {
     setName: (name) => edit((p) => ({ ...p, name }), "name"),
     setIcon: (icon, iconStyle) => edit((p) => ({ ...p, icon, iconStyle })),
 
-    selectState: (state) =>
-      set({ selectedState: state, selectedIndex: get().project.states[state].frames.length ? 0 : null }),
+    selectState: (state) => {
+      const spec = get().project.states[state];
+      const track = spec.tracks?.[0];
+      const frames = track?.frames ?? spec.frames;
+      set({ selectedState: state, selectedTrackId: track?.id ?? null, selectedIndex: frames.length ? 0 : null });
+    },
+    selectTrack: (trackId) => {
+      const spec = get().project.states[get().selectedState];
+      const frames = spec.tracks?.find((track) => track.id === trackId)?.frames ?? [];
+      set({ selectedTrackId: trackId, selectedIndex: frames.length ? 0 : null });
+    },
     selectFrame: (index) => set({ selectedIndex: index }),
 
     setEnabled: (state, enabled) =>
       edit((p) => ({ ...p, states: { ...p.states, [state]: { ...p.states[state], enabled: state === "idle" || enabled } } })),
 
-    addFrames(state, imported) {
+    setSleepAfterMinutes: (minutes) =>
+      edit((p) => ({
+        ...p,
+        states: { ...p.states, sleep: { ...p.states.sleep, sleepAfterMinutes: Math.max(1, Math.min(1440, Math.round(minutes))) } },
+      }), "sleep-delay"),
+
+    addTrack(state, name, givenId, onTop = false) {
+      edit((p) => {
+        const spec = p.states[state];
+        // Unnamed rows are labelled by position, in the interface language.
+        const tracks = spec.tracks ?? [{ id: "main", name: "", frames: spec.frames }];
+        const id = givenId ?? `track-${newId()}`;
+        const added = { id, name: name ?? "", frames: [] };
+        return { ...p, states: { ...p.states, [state]: { ...spec, tracks: onTop ? [added, ...tracks] : [...tracks, added] } } };
+      });
+      const tracks = get().project.states[state].tracks;
+      const track = tracks?.[onTop ? 0 : tracks.length - 1];
+      if (track) set({ selectedTrackId: track.id, selectedIndex: null });
+    },
+
+    batch(run) {
+      batching = { recorded: false };
+      try {
+        run();
+      } finally {
+        batching = null;
+        lastMerge = null;
+      }
+    },
+
+    moveTrack(state, from, to) {
+      edit((p) => {
+        const spec = p.states[state];
+        if (!spec.tracks || from === to || !spec.tracks[from] || !spec.tracks[to]) return p;
+        const tracks = [...spec.tracks];
+        const [moved] = tracks.splice(from, 1);
+        tracks.splice(to, 0, moved);
+        return { ...p, states: { ...p.states, [state]: { ...spec, tracks } } };
+      });
+    },
+
+    renameTrack(state, trackId, name) {
+      edit((p) => {
+        const spec = p.states[state];
+        if (!spec.tracks) return p;
+        const tracks = spec.tracks.map((track) => (track.id === trackId ? { ...track, name } : track));
+        return { ...p, states: { ...p.states, [state]: { ...spec, tracks } } };
+      });
+    },
+
+    removeTrack(state, trackId) {
+      const before = get().project.states[state].tracks;
+      if (!before) return;
+      const removedIndex = before.findIndex((track) => track.id === trackId);
+      if (removedIndex < 0) return;
+      edit((p) => {
+        const spec = p.states[state];
+        const tracks = spec.tracks?.filter((track) => track.id !== trackId) ?? [];
+        const base = baseTrack(tracks)?.frames ?? [];
+        return prune({ ...p, states: { ...p.states, [state]: { ...spec, frames: base, tracks } } });
+      });
+      if (get().selectedTrackId === trackId) {
+        const tracks = get().project.states[state].tracks ?? [];
+        const next = tracks[Math.min(removedIndex, tracks.length - 1)];
+        set({ selectedTrackId: next?.id ?? null, selectedIndex: next?.frames.length ? 0 : null });
+      }
+    },
+
+    addFrames(state, imported, trackId = get().selectedTrackId) {
       if (!imported.length) return;
-      const start = get().project.states[state].frames.length;
+      const before = get().project.states[state];
+      const target = rowOf(before, trackId)?.frames ?? before.frames;
+      const start = target.length;
       edit((p) => {
         const frames = { ...p.frames };
         for (const { asset } of imported) frames[asset.id] = asset;
-        const spec = p.states[state];
         const added = imported.map(({ asset, duration }) => ({
           id: asset.id,
           // A GIF's own timing, rounded to whole frames.
           duration: duration === undefined ? undefined : spanDuration(Math.max(1, Math.round((duration * p.fps) / 1000)), p.fps),
         }));
-        return {
+        const spec = p.states[state];
+        const next = {
           ...p,
           frames,
-          frameOrder: [...p.frameOrder, ...imported.map((f) => f.asset.id)],
-          // Giving a reaction pictures is the moment it is clearly wanted.
-          states: { ...p.states, [state]: { ...spec, enabled: true, frames: [...spec.frames, ...added] } },
+          frameOrder: [
+            ...p.frameOrder,
+            ...imported
+              .map((f) => f.asset.id)
+              .filter((id, index, ids) => !p.frames[id] && ids.indexOf(id) === index),
+          ],
         };
+        const row = rowOf(spec, trackId);
+        if (spec.tracks && row) {
+          const tracks = spec.tracks.map((track) => track === row ? { ...track, frames: [...track.frames, ...added] } : track);
+          const base = baseTrack(tracks)?.frames ?? [];
+          return { ...next, states: { ...p.states, [state]: { ...spec, enabled: true, frames: base, tracks } } };
+        }
+        return { ...next, states: { ...p.states, [state]: { ...spec, enabled: true, frames: [...spec.frames, ...added] } } };
       });
       set({ selectedIndex: start });
     },
 
-    replaceFrame(state, index, asset) {
+    replaceFrame(state, index, asset, trackId = get().selectedTrackId) {
       edit((p) => {
         const spec = p.states[state];
-        return prune({
-          ...p,
-          frames: { ...p.frames, [asset.id]: asset },
-          frameOrder: [...p.frameOrder, asset.id],
-          states: {
-            ...p.states,
-            [state]: { ...spec, frames: spec.frames.map((f, i) => (i === index ? { ...f, id: asset.id } : f)) },
-          },
-        });
+        const next = { ...p, frames: { ...p.frames, [asset.id]: asset }, frameOrder: [...p.frameOrder, asset.id] };
+        const row = rowOf(spec, trackId);
+        if (spec.tracks && row) {
+          const tracks = spec.tracks.map((track) => track === row ? { ...track, frames: track.frames.map((f, i) => i === index ? { ...f, id: asset.id } : f) } : track);
+          const base = baseTrack(tracks)?.frames ?? [];
+          return prune({ ...next, states: { ...p.states, [state]: { ...spec, frames: base, tracks } } });
+        }
+        return prune({ ...next, states: { ...p.states, [state]: { ...spec, frames: spec.frames.map((f, i) => i === index ? { ...f, id: asset.id } : f) } } });
       });
       set({ selectedIndex: index });
     },
 
-    removeFrame(state, index) {
-      editFrames(state, (frames) => frames.filter((_, i) => i !== index));
-      const left = get().project.states[state].frames.length;
+    removeFrame(state, index, trackId = get().selectedTrackId) {
+      editFrames(state, trackId, (frames) => frames.filter((_, i) => i !== index));
+      const spec = get().project.states[state];
+      const left = (rowOf(spec, trackId)?.frames ?? spec.frames).length;
       set({ selectedIndex: left ? Math.min(index, left - 1) : null });
     },
 
-    moveFrame(state, from, to) {
-      editFrames(state, (frames) => {
+    moveFrame(state, from, to, trackId = get().selectedTrackId) {
+      editFrames(state, trackId, (frames) => {
         const next = [...frames];
         const [moved] = next.splice(from, 1);
         next.splice(to, 0, moved);
@@ -229,17 +362,18 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selectedIndex: to });
     },
 
-    setSpan(state, index, span) {
+    setSpan(state, index, span, trackId = get().selectedTrackId) {
       editFrames(
         state,
+        trackId,
         (frames, p) => frames.map((f, i) => (i === index ? { ...f, duration: spanDuration(span, p.fps) } : f)),
-        `span:${state}:${index}`,
+        `span:${state}:${trackId ?? "main"}:${index}`,
       );
     },
 
-    setPlacement(state, index, placement) {
+    setPlacement(state, index, placement, trackId = get().selectedTrackId) {
       const key = Object.keys(placement).sort().join(",");
-      editFrames(state, (frames) => frames.map((f, i) => (i === index ? { ...f, ...placement } : f)), `place:${state}:${index}:${key}`);
+      editFrames(state, trackId, (frames) => frames.map((f, i) => (i === index ? { ...f, ...placement } : f)), `place:${state}:${trackId ?? "main"}:${index}:${key}`);
     },
 
     setPreviewOpen: (open) => set({ previewOpen: open }),

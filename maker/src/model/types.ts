@@ -1,6 +1,6 @@
-/** The five reactions, in the order the editor lists them. Keys match
+/** The reactions, in the order the editor lists them. Keys match
  *  `manifest.json` and the Swift `PetState`. */
-export const PET_STATES = ["idle", "typing", "mouseClick", "tap", "pet"] as const;
+export const PET_STATES = ["idle", "typing", "mouseClick", "tap", "pet", "sleep"] as const;
 export type PetState = (typeof PET_STATES)[number];
 
 export interface FrameEntry {
@@ -21,6 +21,16 @@ export interface StateSpec {
   enabled: boolean;
   fps: number;
   loop: boolean;
+  frames: FrameEntry[];
+  /** Rows played together on one clock, the first drawn over the others. */
+  tracks?: FrameTrack[];
+  /** Minutes without keyboard or mouse activity before sleep starts. */
+  sleepAfterMinutes?: number;
+}
+
+export interface FrameTrack {
+  id: string;
+  name: string;
   frames: FrameEntry[];
 }
 
@@ -97,6 +107,7 @@ const STARTS_ENABLED: Record<PetState, boolean> = {
   mouseClick: false,
   tap: false,
   pet: false,
+  sleep: false,
 };
 
 /** Every reaction plays its frames once per trigger; idle loops whenever
@@ -107,6 +118,7 @@ export const PLAYS_ONCE: Record<PetState, boolean> = {
   mouseClick: true,
   tap: true,
   pet: true,
+  sleep: false,
 };
 
 export function newId(): string {
@@ -116,7 +128,21 @@ export function newId(): string {
 
 export function emptyStates(fps: number): Record<PetState, StateSpec> {
   const states = {} as Record<PetState, StateSpec>;
-  for (const state of PET_STATES) states[state] = { enabled: STARTS_ENABLED[state], fps, loop: !PLAYS_ONCE[state], frames: [] };
+  for (const state of PET_STATES) {
+    states[state] = state === "sleep"
+      ? {
+          enabled: false,
+          fps,
+          loop: true,
+          frames: [],
+          sleepAfterMinutes: 15,
+          tracks: [
+            { id: "sleep-effects", name: "", frames: [] },
+            { id: "sleep-base", name: "", frames: [] },
+          ],
+        }
+      : withTracks({ enabled: STARTS_ENABLED[state], fps, loop: !PLAYS_ONCE[state], frames: [] });
+  }
   return states;
 }
 
@@ -143,9 +169,24 @@ export function spanDuration(span: number, fps: number): number | undefined {
   return span <= 1 ? undefined : (Math.round(span) * 1000) / fps;
 }
 
-/** Seconds each frame of a state stays up. */
-export function durations(spec: StateSpec): number[] {
-  return spec.frames.map((f) => (f.duration ?? 1000 / spec.fps) / 1000);
+/** Every reaction is edited as rows on one timeline; a state saved before
+ *  rows existed gets one, holding its frames. */
+export function withTracks(spec: StateSpec): StateSpec {
+  return spec.tracks ? spec : { ...spec, tracks: [{ id: "main", name: "", frames: spec.frames }] };
+}
+
+/** The row holding the pet itself: `frames` mirrors it, for readers that
+ *  know only one row (pets made before rows). */
+export function baseTrack(tracks: FrameTrack[]): FrameTrack | undefined {
+  return tracks.find((track) => track.id === "sleep-base" || track.id === "main") ?? tracks.at(-1);
+}
+
+export function timelineTracks(spec: StateSpec): FrameTrack[] {
+  return spec.tracks?.length ? spec.tracks : [{ id: "main", name: "", frames: spec.frames }];
+}
+
+export function allStateFrames(spec: StateSpec): FrameEntry[] {
+  return timelineTracks(spec).flatMap((track) => track.frames);
 }
 
 export function hasPlacement(entry: FrameEntry): boolean {

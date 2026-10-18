@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { fitRect, placement } from "../model/placement";
-import { durations, type Canvas, type FrameAsset, type FrameEntry, type StateSpec } from "../model/types";
+import type { Canvas, FrameAsset, FrameEntry, StateSpec } from "../model/types";
+import { stateCells } from "../model/timeline";
 
 /**
  * One frame drawn on the canvas as the pet will show it: fitted, then
@@ -52,12 +53,14 @@ export function FrameStack({
   shown,
   canvas,
   ratio,
+  style,
 }: {
   frames: Record<string, FrameAsset>;
   entries: FrameEntry[];
   shown: number;
   canvas: Pick<Canvas, "width" | "height">;
   ratio: number;
+  style?: CSSProperties;
 }) {
   return (
     <>
@@ -71,7 +74,7 @@ export function FrameStack({
               canvas={canvas}
               ratio={ratio}
               entry={entry}
-              style={{ visibility: i === shown ? "visible" : "hidden" }}
+              style={{ ...style, visibility: i === shown ? "visible" : "hidden" }}
             />
           )
         );
@@ -80,40 +83,30 @@ export function FrameStack({
   );
 }
 
-/**
- * Steps through a state's frames with each frame's own duration, like the
- * runtime's `SpriteAnimator`. A new state (or `restartKey`) starts on its
- * first frame in the very same render. A one-shot holds its last frame and
- * reports back.
- */
-export function useFramePlayer(
+/** A shared-cell player for composited tracks. */
+export function useTimelinePlayer(
   spec: StateSpec | null,
   { playing = true, restartKey = 0, onFinished }: { playing?: boolean; restartKey?: unknown; onFinished?: () => void } = {},
 ): number {
-  const [at, setAt] = useState({ spec, restartKey, index: 0 });
+  const [at, setAt] = useState({ spec, restartKey, cell: 0 });
   const finished = useRef(onFinished);
   finished.current = onFinished;
-
-  // Reset during render, not in an effect, so the old index is never shown
-  // against the new state's frames.
-  let index = at.index;
+  let cell = at.cell;
   if (at.spec !== spec || at.restartKey !== restartKey) {
-    index = 0;
-    setAt({ spec, restartKey, index: 0 });
+    cell = 0;
+    setAt({ spec, restartKey, cell: 0 });
   }
-
   useEffect(() => {
-    if (!spec || !playing || spec.frames.length === 0) return;
-    if (spec.frames.length === 1 && spec.loop) return;
-    const i = Math.min(index, spec.frames.length - 1);
-    const delay = Math.max(durations(spec)[i] * 1000, 1000 / 60);
+    if (!spec || !playing) return;
+    const cells = stateCells(spec);
+    if (cells <= 1 && spec.loop) return;
     const timer = window.setTimeout(() => {
-      if (i < spec.frames.length - 1) setAt({ spec, restartKey, index: i + 1 });
-      else if (spec.loop) setAt({ spec, restartKey, index: 0 });
+      if (cell < cells - 1) setAt({ spec, restartKey, cell: cell + 1 });
+      else if (spec.loop) setAt({ spec, restartKey, cell: 0 });
       else finished.current?.();
-    }, delay);
+    }, Math.max(1000 / spec.fps, 1000 / 60));
     return () => window.clearTimeout(timer);
-  }, [spec, index, playing, restartKey]);
-
-  return spec ? Math.min(index, Math.max(spec.frames.length - 1, 0)) : 0;
+  }, [spec, cell, playing, restartKey]);
+  return spec ? Math.min(cell, Math.max(stateCells(spec) - 1, 0)) : 0;
 }
+

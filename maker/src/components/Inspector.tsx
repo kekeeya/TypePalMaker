@@ -9,8 +9,11 @@ export function Inspector() {
   const project = useEditor((s) => s.project);
   const state = useEditor((s) => s.selectedState);
   const index = useEditor((s) => s.selectedIndex);
+  const trackId = useEditor((s) => s.selectedTrackId);
   const setPlacement = useEditor((s) => s.setPlacement);
-  const frame = index !== null ? project.states[state].frames[index] : undefined;
+  const spec = project.states[state];
+  const frames = spec.tracks?.find((track) => track.id === trackId)?.frames ?? spec.frames;
+  const frame = index !== null ? frames[index] : undefined;
   const scale = frame?.scale ?? 1;
   // The picture's size on the canvas, in canvas pixels.
   const asset = frame && project.frames[frame.id];
@@ -26,7 +29,7 @@ export function Inspector() {
         value={{ scale, offsetX: frame?.offsetX ?? 0, offsetY: frame?.offsetY ?? 0, rotation: frame?.rotation ?? 0 }}
         disabled={!frame}
         size={size}
-        onChange={(patch) => index !== null && frame && setPlacement(state, index, patch)}
+        onChange={(patch) => index !== null && frame && setPlacement(state, index, patch, trackId)}
       />
     </aside>
   );

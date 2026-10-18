@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { assetBounds, type Box } from "../model/bounds";
 import { useT } from "../i18n/useT";
-import { iconRect, ICON_SIDE } from "../model/icon";
-import type { FrameAsset, IconStyle } from "../model/types";
+import { iconRect, iconSource, ICON_SIDE, IDLE_COVER_ID } from "../model/icon";
+import type { FrameAsset, IconStyle, Project } from "../model/types";
 import { ColorWheel } from "./ColorWheel";
 import { PlacementControls } from "./PlacementControls";
 
@@ -10,6 +10,34 @@ const SWATCHES = ["#ffffff", "#fffaee", "#fdf0c4", "#e3f1fc", "#dff2ea", "#fde4e
 
 /** The visible part of a picture, or undefined until it is known. Null
  *  asks for no crop. */
+/** The picture the icon shows (see `iconSource`), worked out again only when
+ *  what it is drawn from changes. */
+export function useIconSource(project: Project): FrameAsset | undefined {
+  const [source, setSource] = useState<FrameAsset>();
+  const { icon, frames, canvas, fps } = project;
+  const idle = project.states.idle;
+  useEffect(() => {
+    let alive = true;
+    void iconSource(project).then((found) => {
+      if (alive) setSource(found);
+      else if (found?.id === IDLE_COVER_ID) URL.revokeObjectURL(found.url);
+    });
+    return () => {
+      alive = false;
+    };
+    // Only what the picture is drawn from: not the name, not other reactions.
+  }, [icon, frames, canvas, fps, idle]);
+  // The drawn picture showing is let go once another replaces it, or the
+  // page closes.
+  useEffect(
+    () => () => {
+      if (source?.id === IDLE_COVER_ID) URL.revokeObjectURL(source.url);
+    },
+    [source],
+  );
+  return source;
+}
+
 export function useCrop(asset: FrameAsset | undefined, wanted: boolean): Box | null | undefined {
   const [found, setFound] = useState<{ asset?: FrameAsset; box: Box | null }>();
   useEffect(() => {

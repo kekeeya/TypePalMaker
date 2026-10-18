@@ -23,10 +23,9 @@ export async function bakeProject(project: Project): Promise<Project> {
   const states = {} as Record<PetState, StateSpec>;
 
   try {
-    for (const state of PET_STATES) {
-      const spec = project.states[state];
+    const bakeEntries = async (sourceEntries: FrameEntry[]) => {
       const entries: FrameEntry[] = [];
-      for (const entry of spec.frames) {
+      for (const entry of sourceEntries) {
         const source = project.frames[entry.id];
         if (!source) continue;
         const p = placement(entry);
@@ -52,7 +51,16 @@ export async function bakeProject(project: Project): Promise<Project> {
         }
         entries.push(entry.duration === undefined ? { id } : { id, duration: entry.duration });
       }
-      states[state] = { ...spec, fps: project.fps, frames: entries };
+      return entries;
+    };
+
+    for (const state of PET_STATES) {
+      const spec = project.states[state];
+      const entries = await bakeEntries(spec.frames);
+      const tracks = spec.tracks
+        ? await Promise.all(spec.tracks.map(async (track) => ({ ...track, frames: await bakeEntries(track.frames) })))
+        : undefined;
+      states[state] = { ...spec, fps: project.fps, frames: entries, tracks };
     }
   } finally {
     for (const image of decoded.values()) image.close();

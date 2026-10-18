@@ -11,7 +11,7 @@ import { strFromU8, strToU8, unzipSync } from "fflate";
  *  frames are kept no taller than that. */
 const MAX_SCALE = 2;
 const RETINA = 2;
-const STATES = ["idle", "typing", "mouseClick", "tap", "pet"] as const;
+const STATES = ["idle", "typing", "mouseClick", "tap", "pet", "sleep"] as const;
 
 export interface PetData {
   name: string;
@@ -23,14 +23,17 @@ export interface PetData {
 }
 
 /** `projectZip` is a baked project, as the generators receive it. */
-export async function readPet(projectZip: Uint8Array, scale: (png: Uint8Array, maxPx: number) => Promise<Uint8Array>): Promise<PetData> {
+export async function readPet(
+  projectZip: Uint8Array,
+  scale: (png: Uint8Array, maxPx: number) => Promise<Uint8Array>,
+): Promise<PetData> {
   const project = unzipSync(projectZip);
   const manifest = JSON.parse(strFromU8(project["manifest.json"])) as {
     name: string;
     id: string;
     display: { height: number };
     frames: Record<string, { file: string }>;
-    states: Record<string, { enabled: boolean; frames: (string | { id: string })[] }>;
+    states: Record<string, { enabled: boolean; frames: (string | { id: string })[]; tracks?: { frames: (string | { id: string })[] }[] }>;
   };
   const name = manifest.name.trim();
   if (!name) throw new Error("no-name");
@@ -39,8 +42,10 @@ export async function readPet(projectZip: Uint8Array, scale: (png: Uint8Array, m
   const used = new Set<string>();
   for (const state of STATES) {
     const spec = manifest.states[state];
-    if (!spec?.enabled || !spec.frames.length) continue;
-    for (const entry of spec.frames) used.add(typeof entry === "string" ? entry : entry.id);
+    if (!spec?.enabled) continue;
+    const entries = [...spec.frames, ...(spec.tracks ?? []).flatMap((track) => track.frames)];
+    if (!entries.length) continue;
+    for (const entry of entries) used.add(typeof entry === "string" ? entry : entry.id);
   }
   const maxPx = Math.ceil((manifest.display?.height ?? 160) * MAX_SCALE * RETINA);
   const files: Record<string, Uint8Array> = {};

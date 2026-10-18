@@ -56,3 +56,64 @@ describe("undo and redo", () => {
     expect(editor().past).toEqual([]);
   });
 });
+
+describe("timeline tracks", () => {
+  beforeEach(() => editor().loadProject(emptyProject("a")));
+
+  it("deletes every track and can add one again", () => {
+    editor().selectState("sleep");
+    editor().removeTrack("sleep", "sleep-effects");
+    expect(editor().project.states.sleep.tracks?.map((track) => track.id)).toEqual(["sleep-base"]);
+    expect(editor().selectedTrackId).toBe("sleep-base");
+
+    editor().removeTrack("sleep", "sleep-base");
+    expect(editor().project.states.sleep.tracks).toEqual([]);
+    expect(editor().selectedTrackId).toBeNull();
+
+    editor().addTrack("sleep", "Zzz 睡眠特效");
+    expect(editor().project.states.sleep.tracks).toHaveLength(1);
+    expect(editor().selectedTrackId).toBe(editor().project.states.sleep.tracks?.[0].id);
+    expect(editor().project.states.sleep.tracks?.[0].name).toBe("Zzz 睡眠特效");
+  });
+});
+
+describe("rows on every reaction", () => {
+  beforeEach(() => editor().loadProject(emptyProject("a")));
+
+  it("edits the pet's own row, with effects over it", () => {
+    editor().addFrames("idle", [asset("x")]);
+    expect(editor().project.states.idle.tracks?.map((track) => track.frames.map((f) => f.id))).toEqual([["x"]]);
+    expect(editor().project.states.idle.frames.map((f) => f.id)).toEqual(["x"]);
+
+    editor().addTrack("idle", "", "sleep-effects", true);
+    editor().addFrames("idle", [asset("z")]);
+    expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["sleep-effects", "main"]);
+    // The pet's row is still the one older readers see.
+    expect(editor().project.states.idle.frames.map((f) => f.id)).toEqual(["x"]);
+
+    editor().addTrack("idle");
+    expect(editor().project.states.idle.tracks?.at(-1)?.frames).toEqual([]);
+    expect(editor().project.states.idle.frames.map((f) => f.id)).toEqual(["x"]);
+  });
+
+  it("adds an effect as one step", () => {
+    editor().batch(() => {
+      editor().addTrack("idle", "", "sleep-effects", true);
+      editor().addFrames("idle", [asset("z")]);
+    });
+    expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["sleep-effects", "main"]);
+    editor().undo();
+    expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["main"]);
+    expect(editor().project.frames.z).toBeUndefined();
+  });
+
+  it("moves a row, keeping the pet's own row as the one older readers see", () => {
+    editor().addFrames("idle", [asset("x")]);
+    editor().addTrack("idle", "", "sleep-effects", true);
+    editor().moveTrack("idle", 0, 1);
+    expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["main", "sleep-effects"]);
+    expect(editor().project.states.idle.frames.map((f) => f.id)).toEqual(["x"]);
+    editor().undo();
+    expect(editor().project.states.idle.tracks?.map((track) => track.id)).toEqual(["sleep-effects", "main"]);
+  });
+});

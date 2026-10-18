@@ -1,6 +1,8 @@
 import { assetBounds, type Box } from "./bounds";
+import { drawPlaced } from "./placement";
 import { assetFromBytes } from "./projectFile";
-import { DEFAULT_ICON_STYLE, type FrameAsset, type Project } from "./types";
+import { entryAtCell } from "./timeline";
+import { DEFAULT_ICON_STYLE, hasPlacement, timelineTracks, type FrameAsset, type FrameEntry, type Project } from "./types";
 
 /** The icon's side in icon pixels: the unit of `IconStyle` offsets. */
 export const ICON_SIDE = 512;
@@ -10,16 +12,35 @@ const CROP_MARGIN = (ICON_SIDE * 5) / 82;
 /** Rendered size of the generated icon; the generator makes smaller ones. */
 const OUTPUT_SIDE = 1024;
 
-/** The picture the icon shows: the uploaded one, or the first idle frame. */
-export function iconSource(project: Project): FrameAsset | undefined {
-  return project.icon ?? project.frames[project.states.idle.frames[0]?.id ?? ""];
+/** Names the picture `idleCover` draws, which holds a blob URL of its own. */
+export const IDLE_COVER_ID = "idle-cover";
+
+/** Idle as the pet first shows it: every row's first picture on the canvas,
+ *  placed, the first row drawn over the others. A lone picture left where
+ *  it is needs no drawing and is used as it is. */
+export async function idleCover(project: Project): Promise<FrameAsset | undefined> {
+  const entries = timelineTracks(project.states.idle)
+    .map((track) => entryAtCell(track, project.fps, 0)?.entry)
+    .filter((entry): entry is FrameEntry => !!entry && !!project.frames[entry.id]);
+  if (!entries.length) return undefined;
+  if (entries.length === 1 && !hasPlacement(entries[0])) return project.frames[entries[0].id];
+
+  const surface = document.createElement("canvas");
+  surface.width = project.canvas.width;
+  surface.height = project.canvas.height;
+  const ctx = surface.getContext("2d")!;
+  for (const entry of [...entries].reverse()) {
+    const frame = project.frames[entry.id];
+    const image = await createImageBitmap(new Blob([frame.png as BlobPart], { type: "image/png" }));
+    drawPlaced(ctx, image, frame, project.canvas, entry);
+    image.close();
+  }
+  return assetFromBytes(IDLE_COVER_ID, "idle", await toPng(surface));
 }
 
-/** The part of the picture the icon frames: an uploaded picture whole; the
- *  first idle frame without its transparent margin, as on the home card. */
-export async function iconCrop(project: Project): Promise<Box | null> {
-  const source = iconSource(project);
-  return source && !project.icon ? assetBounds(source) : null;
+/** The picture the icon shows: the uploaded one, or idle as it first appears. */
+export async function iconSource(project: Project): Promise<FrameAsset | undefined> {
+  return project.icon ?? idleCover(project);
 }
 
 /** Where the whole picture sits before adjustment, so that `crop` (or the
@@ -49,10 +70,12 @@ export async function renderIcon(project: Project): Promise<FrameAsset> {
   ctx.fillStyle = style.background;
   ctx.fillRect(0, 0, OUTPUT_SIDE, OUTPUT_SIDE);
 
-  const source = iconSource(project);
+  const source = await iconSource(project);
   if (source) {
     const image = await createImageBitmap(new Blob([source.png as BlobPart], { type: "image/png" }));
-    const r = iconRect(source, await iconCrop(project));
+    // An uploaded picture is framed whole; idle without its transparent
+    // margin, as on the home card.
+    const r = iconRect(source, project.icon ? null : await assetBounds(source));
     const half = ICON_SIDE / 2;
     ctx.save();
     ctx.scale(OUTPUT_SIDE / ICON_SIDE, OUTPUT_SIDE / ICON_SIDE);
@@ -63,8 +86,13 @@ export async function renderIcon(project: Project): Promise<FrameAsset> {
     ctx.drawImage(image, r.left - half, r.top - half, r.width, r.height);
     ctx.restore();
     image.close();
+    if (source.id === IDLE_COVER_ID) URL.revokeObjectURL(source.url);
   }
-  const blob = await new Promise<Blob | null>((resolve) => surface.toBlob(resolve, "image/png"));
+  return assetFromBytes("icon", "icon", await toPng(surface));
+}
+
+async function toPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("icon encode failed");
-  return assetFromBytes("icon", "icon", new Uint8Array(await blob.arrayBuffer()));
+  return new Uint8Array(await blob.arrayBuffer());
 }

@@ -29,7 +29,7 @@ fn tr(zh: String, en: String) -> String {
 /// Frames are stored at that size and no larger.
 const MAX_SCALE: f64 = 2.0;
 const RETINA: f64 = 2.0;
-const STATES: [&str; 5] = ["idle", "typing", "mouseClick", "tap", "pet"];
+const STATES: [&str; 6] = ["idle", "typing", "mouseClick", "tap", "pet", "sleep"];
 
 /// Problems the Maker's UI knows how to explain. Anything else is passed on
 /// as text.
@@ -173,10 +173,16 @@ fn write_frames(
         .ok_or_else(|| tr("manifest 缺少 states".into(), "The manifest has no states".into()))?;
 
     let mut used: Vec<String> = Vec::new();
+    let mut first_idle_id = String::new();
     let mut states_out = Map::new();
     for state in STATES {
         let Some(spec) = states_in.get(state) else { continue };
-        let entries = spec["frames"].as_array().cloned().unwrap_or_default();
+        let mut entries = spec["frames"].as_array().cloned().unwrap_or_default();
+        if let Some(tracks) = spec["tracks"].as_array() {
+            for track in tracks {
+                entries.extend(track["frames"].as_array().cloned().unwrap_or_default());
+            }
+        }
         let enabled = spec["enabled"].as_bool().unwrap_or(false) && !entries.is_empty();
         if state == "idle" && !enabled {
             return Err(tr("默认状态必须开启且至少有一帧".into(), "Idle must be on and have at least one frame".into()).into());
@@ -184,6 +190,10 @@ fn write_frames(
         if enabled {
             for entry in &entries {
                 let fid = entry.as_str().or_else(|| entry["id"].as_str()).unwrap_or("").to_string();
+                // Any of idle's rows will do; the pet's own one comes first.
+                if state == "idle" && first_idle_id.is_empty() {
+                    first_idle_id = fid.clone();
+                }
                 if !frames_in.contains_key(&fid) {
                     return Err(tr(format!("状态 {state} 引用了不存在的帧 {fid}"), format!("State {state} uses a missing frame {fid}")).into());
                 }
@@ -195,11 +205,6 @@ fn write_frames(
         states_out.insert(state.to_string(), spec.clone());
     }
 
-    let first_idle_id = states_in["idle"]["frames"][0]
-        .as_str()
-        .or_else(|| states_in["idle"]["frames"][0]["id"].as_str())
-        .unwrap_or("")
-        .to_string();
     let mut first_idle = None;
 
     let mut frames_out = Map::new();

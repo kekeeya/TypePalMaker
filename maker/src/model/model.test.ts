@@ -3,8 +3,15 @@ import { PetBehavior, playedAs, StrokeRecognizer, StrokeTuning } from "./behavio
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fitRect } from "./placement";
 import { decodeProject, encodeProject } from "./projectFile";
-import { displayHeight, emptyProject, frameSpan, PET_STATES, spanDuration, type PetState, type StateSpec } from "./types";
+import { baseTrack, displayHeight, emptyProject, frameSpan, PET_STATES, spanDuration, type FrameEntry, type PetState, type StateSpec } from "./types";
 import { validate } from "./validate";
+import { BUILT_IN_EFFECTS, EFFECT_KINDS, effectOfRow, effectRowId } from "./template";
+
+/** A reaction showing `frames` as its pet's row, as the editor keeps it. */
+const withFrames = (spec: StateSpec, frames: FrameEntry[]): StateSpec => {
+  const base = spec.tracks && baseTrack(spec.tracks);
+  return { ...spec, frames, tracks: spec.tracks?.map((track) => (track === base ? { ...track, frames } : track)) };
+};
 
 // Mirrors player/Tests/TypePalTests/TypePalCoreTests.swift — keep in step.
 
@@ -105,8 +112,19 @@ describe("PetBehavior (same cases as the Swift runtime)", () => {
     expect(b.current).toBe("idle");
   });
 
-  it("loops only idle", () => {
-    for (const state of PET_STATES) expect(playedAs(spec(), state).loop).toBe(state === "idle");
+  it("loops resting states", () => {
+    for (const state of PET_STATES) expect(playedAs(spec(), state).loop).toBe(state === "idle" || state === "sleep");
+  });
+
+  it("sleeps after inactivity and wakes on activity", () => {
+    const b = new PetBehavior((state) => state === "sleep" ? { ...spec(), sleepAfterMinutes: 1 / 60 } : spec());
+    b.activity(0);
+    b.checkInactivity(0.9);
+    expect(b.current).toBe("idle");
+    b.checkInactivity(1);
+    expect(b.current).toBe("sleep");
+    b.activity(1.1);
+    expect(b.current).toBe("idle");
   });
 });
 
@@ -165,8 +183,19 @@ describe("project file", () => {
     const png = new Uint8Array([137, 80, 78, 71]);
     p.frames.a = { id: "a", name: "站立", png, width: 10, height: 10, url: "" };
     p.frameOrder = ["a"];
-    p.states.idle.frames = [{ id: "a" }, { id: "a", duration: 250, scale: 1.5, offsetX: 8, offsetY: -16, rotation: 10 }];
+    p.states.idle = withFrames(p.states.idle, [{ id: "a" }, { id: "a", duration: 250, scale: 1.5, offsetX: 8, offsetY: -16, rotation: 10 }]);
     p.states.tap = { enabled: true, fps: 12, loop: true, frames: [{ id: "a" }] };
+    p.states.sleep = {
+      enabled: true,
+      fps: 12,
+      loop: true,
+      frames: [{ id: "a", duration: 500 }],
+      sleepAfterMinutes: 12,
+      tracks: [
+        { id: "effects", name: "Z", frames: [{ id: "a" }] },
+        { id: "base", name: "Base", frames: [{ id: "a", duration: 500 }] },
+      ],
+    };
 
     const back = await decodeProject(encodeProject(p));
     expect(back.name).toBe("小咪");
@@ -181,17 +210,27 @@ describe("project file", () => {
     ]);
     expect(back.states.tap.enabled).toBe(true);
     expect(back.states.typing.enabled).toBe(false);
+    expect(back.states.sleep.sleepAfterMinutes).toBe(12);
+    expect(back.states.sleep.tracks?.map((track) => track.frames.length)).toEqual([1, 1]);
   });
 
   it("writes what the runtime reads", () => {
     const p = emptyProject("x", { width: 800, height: 800, dpi: 144 }, 8);
     p.frames.a = { id: "a", name: "a", png: new Uint8Array([1]), width: 1, height: 1, url: "" };
     p.frameOrder = ["a"];
-    p.states.idle.frames = [{ id: "a" }, { id: "a", duration: spanDuration(5, 8) }];
+    p.states.idle = withFrames(p.states.idle, [{ id: "a" }, { id: "a", duration: spanDuration(5, 8) }]);
     const manifest = JSON.parse(strFromU8(unzipSync(encodeProject(p))["manifest.json"]));
     expect(manifest.display.height).toBe(displayHeight(p.canvas));
     expect(manifest.display.height).toBe(400);
     expect(manifest.states.idle).toEqual({ enabled: true, fps: 8, loop: true, frames: ["a", { id: "a", duration: 625 }] });
+  });
+
+  it("keeps an intentionally empty sleep timeline empty", async () => {
+    const p = emptyProject("x");
+    p.states.sleep.tracks = [];
+    p.states.sleep.frames = [];
+    const back = await decodeProject(encodeProject(p));
+    expect(back.states.sleep.tracks).toEqual([]);
   });
 
   it("brings older projects onto one frame rate without changing their timing", async () => {
@@ -238,7 +277,7 @@ describe("project file", () => {
     p.name = "x";
     p.frames.a = { id: "a", name: "a", png: new Uint8Array(), width: 1, height: 1, url: "" };
     p.frameOrder = ["a"];
-    p.states.idle.frames = [{ id: "a" }];
+    p.states.idle = withFrames(p.states.idle, [{ id: "a" }]);
     p.states.typing.enabled = true;
     expect(validate(p)).toEqual([{ kind: "stateEmpty", state: "typing" }]);
   });
@@ -256,5 +295,25 @@ describe("timeline frames", () => {
   it("places pictures standing on the canvas floor", () => {
     expect(fitRect({ width: 100, height: 50 }, { width: 200, height: 200 })).toEqual({ left: 0, top: 100, width: 200, height: 100 });
     expect(fitRect({ width: 50, height: 100 }, { width: 200, height: 200 })).toEqual({ left: 50, top: 0, width: 100, height: 200 });
+  });
+});
+
+describe("built-in effects", () => {
+  it("has every picture and icon it lists", async () => {
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const assets = join(__dirname, "../../public/assets");
+    for (const effect of EFFECT_KINDS) {
+      expect(existsSync(join(assets, `${effect}-effect-icon.png`)), effect).toBe(true);
+      for (const file of BUILT_IN_EFFECTS[effect]) expect(existsSync(join(assets, "typepal-frames", file)), file).toBe(true);
+    }
+  });
+
+  it("knows a row by the effect it was added as", () => {
+    expect(effectOfRow(effectRowId("zzz"))).toBe("zzz");
+    expect(effectOfRow("effect-heart")).toBe("heart");
+    expect(effectOfRow("effect-heart-k3x9")).toBe("heart");
+    expect(effectOfRow("main")).toBeUndefined();
+    expect(effectOfRow("track-1a2b")).toBeUndefined();
   });
 });

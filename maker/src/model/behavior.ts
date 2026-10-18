@@ -1,4 +1,5 @@
-import { durations, type PetState, type StateSpec } from "./types";
+import type { PetState, StateSpec } from "./types";
+import { stateCells } from "./timeline";
 
 /**
  * The pet's rules, ported line for line from the Swift runtime
@@ -23,10 +24,12 @@ export class PetBehavior {
   private isStroking = false;
   private lastKeyAt = -Infinity;
   private lastStrokeAt = -Infinity;
+  private lastActivityAt: number | null = null;
 
   constructor(private readonly playable: (state: PetState) => StateSpec | null) {}
 
   tapped(time: number) {
+    this.activity(time);
     if (this.current !== "tap") this.start("tap", time);
   }
 
@@ -39,12 +42,35 @@ export class PetBehavior {
   }
 
   keyPressed(time: number) {
+    this.activity(time);
     this.lastKeyAt = Math.max(this.lastKeyAt, time);
     if (this.current === "idle") this.start("typing", time);
   }
 
   mouseClicked(time: number) {
+    this.activity(time);
     if (this.current === "idle") this.start("mouseClick", time);
+  }
+
+  activity(time: number) {
+    this.lastActivityAt = Math.max(this.lastActivityAt ?? -Infinity, time);
+    if (this.current === "sleep") {
+      this.current = "idle";
+      this.round += 1;
+    }
+  }
+
+  checkInactivity(time: number) {
+    const sleep = this.playable("sleep");
+    if (!sleep || this.current !== "idle" || this.lastActivityAt === null) return;
+    if (time - this.lastActivityAt >= (sleep.sleepAfterMinutes ?? 15) * 60) this.start("sleep", time);
+  }
+
+  nextSleepDeadline(time: number): number | null {
+    const sleep = this.playable("sleep");
+    if (!sleep || this.current !== "idle" || this.lastActivityAt === null) return null;
+    const deadline = this.lastActivityAt + (sleep.sleepAfterMinutes ?? 15) * 60;
+    return deadline > time ? deadline : time;
   }
 
   /** The reaction showing has played its last frame through. */
@@ -55,6 +81,7 @@ export class PetBehavior {
     this.current = "idle";
     if (this.isStroking && (ended !== "pet" || this.lastStrokeAt >= secondHalf)) this.start("pet", time);
     if (this.current === "idle" && this.lastKeyAt >= secondHalf) this.start("typing", time);
+    this.checkInactivity(time);
   }
 
   private start(state: PetState, time: number) {
@@ -63,14 +90,14 @@ export class PetBehavior {
     this.current = state;
     this.round += 1;
     this.roundStart = time;
-    this.roundLength = durations(spec).reduce((a, b) => a + b, 0);
+    this.roundLength = stateCells(spec) / spec.fps;
   }
 }
 
 /** How a state is played, whatever its file says: idle loops, every
  *  reaction plays once per trigger. */
 export function playedAs(spec: StateSpec, state: PetState): StateSpec {
-  return { ...spec, loop: state === "idle" };
+  return { ...spec, loop: state === "idle" || state === "sleep" };
 }
 
 export const StrokeTuning = {

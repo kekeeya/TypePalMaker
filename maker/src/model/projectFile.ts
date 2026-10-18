@@ -7,6 +7,8 @@ import {
   displayHeight,
   emptyStates,
   newId,
+  baseTrack,
+  withTracks,
   FPS_LIMITS,
   frameSpan,
   PET_STATES,
@@ -15,6 +17,7 @@ import {
   type Canvas,
   type FrameAsset,
   type FrameEntry,
+  type FrameTrack,
   type IconStyle,
   type PetState,
   type Project,
@@ -41,7 +44,14 @@ interface ManifestJSON {
   /** Editor only: how `icon.png` is placed on the icon. */
   iconStyle?: IconStyle;
   frames: Record<string, { file: string; name?: string }>;
-  states: Partial<Record<PetState, { enabled: boolean; fps: number; loop: boolean; frames: ManifestFrame[] }>>;
+  states: Partial<Record<PetState, {
+    enabled: boolean;
+    fps: number;
+    loop: boolean;
+    frames: ManifestFrame[];
+    tracks?: { id: string; name: string; frames: ManifestFrame[] }[];
+    sleepAfterMinutes?: number;
+  }>>;
 }
 
 export function encodeProject(project: Project): Uint8Array {
@@ -68,11 +78,23 @@ export function encodeProject(project: Project): Uint8Array {
   }
   for (const state of PET_STATES) {
     const spec = project.states[state];
+    // The rows are what the editor changes; `frames` is the pet's own row.
+    // A reaction that is just that row is saved as before rows existed.
+    const own = spec.tracks?.length ? (baseTrack(spec.tracks)?.frames ?? []) : spec.frames;
+    const plain = state !== "sleep" && spec.tracks?.length === 1 && spec.tracks[0].id === "main" && !spec.tracks[0].name;
     manifest.states[state] = {
       enabled: spec.enabled,
       fps: project.fps,
       loop: !PLAYS_ONCE[state],
-      frames: spec.frames.filter((f) => used.has(f.id)).map(compactEntry),
+      frames: own.filter((f) => used.has(f.id)).map(compactEntry),
+      ...(spec.tracks !== undefined && !plain ? {
+        tracks: spec.tracks.map((track) => ({
+          id: track.id,
+          name: track.name,
+          frames: track.frames.filter((f) => used.has(f.id)).map(compactEntry),
+        })),
+      } : {}),
+      ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
     };
   }
   if (project.icon) files["icon.png"] = project.icon.png;
@@ -132,7 +154,25 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
         .map((f): FrameEntry => (typeof f === "string" ? { id: f } : { ...f }))
         .filter((f) => frames[f.id])
         .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) })),
+      ...(spec.tracks !== undefined ? {
+        tracks: spec.tracks.map((track): FrameTrack => ({
+          id: track.id,
+          name: track.name ?? "",
+          frames: (track.frames ?? [])
+            .map((f): FrameEntry => typeof f === "string" ? { id: f } : { ...f })
+            .filter((f) => frames[f.id])
+            .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) })),
+        })),
+      } : {}),
+      ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
     };
+    if (state !== "sleep") states[state] = withTracks(states[state]);
+    else if (states.sleep.tracks === undefined) {
+      states.sleep.tracks = [
+        { id: "sleep-effects", name: "", frames: [] },
+        { id: "sleep-base", name: "", frames: states.sleep.frames },
+      ];
+    }
   }
 
   const iconBytes = files["icon.png"];

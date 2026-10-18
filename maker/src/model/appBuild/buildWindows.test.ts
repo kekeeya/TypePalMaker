@@ -120,6 +120,20 @@ function mascotProject(name = "TypePal 小团子"): Uint8Array {
     }
     states[state] = { enabled: ids.length > 0, fps: animation.fps, loop: state === "idle", frames: ids };
   }
+  // Sleep as the template has it, and a Z row over typing: the rows
+  // reach the pet.
+  for (const id of ["sleep-z-01", "sleep-z-02", "sleep-z-03", "sleep-base-01"]) {
+    files[`frames/${id}.png`] = new Uint8Array(readFileSync(join(dir, `${id}.png`)));
+    frames[id] = { file: `frames/${id}.png` };
+  }
+  const zs = ["sleep-z-01", "sleep-z-02", "sleep-z-03"];
+  const base = { id: "sleep-base-01", duration: 4000 / animation.fps };
+  states.sleep = {
+    enabled: true, fps: animation.fps, loop: true, frames: [base], sleepAfterMinutes: 15,
+    tracks: [{ id: "sleep-effects", name: "", frames: zs }, { id: "sleep-base", name: "", frames: [base] }],
+  };
+  const typing = states.typing as { frames: string[] };
+  states.typing = { ...typing, tracks: [{ id: "sleep-effects", name: "", frames: zs }, { id: "main", name: "", frames: typing.frames }] };
   files["icon.png"] = files["frames/idle-01.png"];
   files["manifest.json"] = strToU8(JSON.stringify({ schemaVersion: 1, name, id: "web-smoke", display: { height: 192 }, frames, states }));
   return zipSync(files);
@@ -167,6 +181,9 @@ describe.skipIf(!haveTemplate)("building from the real template", () => {
     const manifest = JSON.parse(strFromU8(pet["manifest.json"]));
     expect(manifest.name).toBe("TypePal 小团子");
     expect(Object.keys(pet).filter((f) => f.startsWith("frames/")).length).toBe(Object.keys(manifest.frames).length);
+    expect(manifest.states.sleep.tracks).toHaveLength(2);
+    expect(pet["frames/sleep-z-01.png"]).toBeDefined();
+    expect(pet["frames/sleep-base-01.png"]).toBeDefined();
     expect(Data.RawIconItem).toBeDefined();
 
     // CI on Windows launches it, as it does the pet the Rust packer makes.

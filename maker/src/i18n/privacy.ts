@@ -27,7 +27,8 @@ export const POLICY: Record<Lang, PolicySection[]> = {
 1. 打字反应：在 Mac 上只读取系统提供的「距离上一次按键过去了多久」；在 Windows 上只读取「最近一次操作发生的时间」，并排除鼠标的操作。都只用来判断你是否正在打字，无法得知你按了哪个键、输入了什么内容，也不会记录。
 2. 鼠标点击反应：只在你按下鼠标按键时得知「发生了一次点击」（在 Windows 上还会判断是否点在 TypePal 自己身上），不记录点击的位置和所在的应用。
 3. 点击与抚摸：鼠标移动时读取光标当前的位置，只用来判断光标是否落在 TypePal 身上（以区分你是点到了它还是在抚摸它），不记录光标的移动轨迹。
-4. 以上信息只在内存中即时使用，用完即弃，不写入磁盘，也不会发送到任何地方。`,
+4. 睡眠：只记下你最近一次使用键盘或鼠标（包括移动鼠标）的时间，一段时间没有操作就进入睡眠，一有操作就醒来。不记录你做了什么。
+5. 以上信息只在内存中即时使用，用完即弃，不写入磁盘，也不会发送到任何地方。`,
     },
     {
       heading: "三、本地存储",
@@ -53,7 +54,8 @@ export const POLICY: Record<Lang, PolicySection[]> = {
 1. Typing: on a Mac it reads only "how long since the last key press", provided by the system; on Windows only "when you last used the computer", leaving out mouse activity. Either way it only tells whether you are typing: it cannot see which keys you press or what you type, and records nothing.
 2. Mouse clicks: it learns only that "a click happened" when you press a mouse button (on Windows, also whether it was on TypePal itself). It does not record where you clicked or in which app.
 3. Clicking and petting: when the mouse moves, it reads where the pointer is, only to tell whether it is over TypePal (so it knows whether you clicked it or are petting it). It does not record where the pointer has been.
-4. All of the above is used in memory at that moment and then discarded. None of it is written to disk or sent anywhere.`,
+4. Sleep: it notes only when you last used the keyboard or mouse (moving the mouse included), to fall asleep after a while without input and wake when there is some. It does not record what you did.
+5. All of the above is used in memory at that moment and then discarded. None of it is written to disk or sent anywhere.`,
     },
     {
       heading: "3. Local storage",
