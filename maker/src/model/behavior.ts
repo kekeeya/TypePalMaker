@@ -205,12 +205,12 @@ export class PetSpeech {
     return Math.min(6, Math.max(2.5, 1.6 + 0.16 * Array.from(line).length));
   }
 
-  /** The lines a round may say. An action says its own; the usual animation
-   *  says its reaction's on every round of a triggered reaction, and only on
-   *  coming to a looping one. */
-  static pool(state: PetState, spec: StateSpec, variant: StateVariant | undefined, entered: boolean): string[] {
+  /** The lines a round may say: an action its own; the usual animation of a
+   *  triggered reaction its reaction's. Idle and sleep say something only in
+   *  their random actions. */
+  static pool(state: PetState, spec: StateSpec, variant: StateVariant | undefined): string[] {
     if (variant) return variant.lines;
-    return loops(state) && !entered ? [] : (spec.lines ?? []);
+    return loops(state) ? [] : (spec.lines ?? []);
   }
 
   /** A line to say now, or null: nothing to say, or too soon after the last. */

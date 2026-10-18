@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useT } from "../i18n/useT";
 import { importNotice } from "../i18n/strings";
 import { IMAGE_ACCEPT, importFiles } from "../model/imageImport";
-import { DEFAULT_ICON_STYLE, PET_STATES, type FrameAsset, type PetState } from "../model/types";
+import { DEFAULT_ICON_STYLE, loops, PET_STATES, type FrameAsset, type PetState } from "../model/types";
 import { useEditor } from "../store";
 import { IconDialog, IconPreview, useCrop, useIconSource } from "./IconDialog";
 import { NavIcon } from "./NavIcon";
@@ -81,7 +81,7 @@ export function GeneralPage({ onOpenState }: { onOpenState: (state: PetState) =>
               const spec = project.states[state];
               const minutes = spec.sleepAfterMinutes ?? 15;
               const actions = spec.variants?.length ?? 0;
-              const hasLines = !!spec.lines?.length || !!spec.variants?.some((v) => v.lines.length);
+              const hasLines = (!loops(state) && !!spec.lines?.length) || !!spec.variants?.some((v) => v.lines.length);
               return (
                 <div key={state} className={`reaction-item${state === "sleep" && spec.enabled ? " sleep-open" : ""}`}>
                   <div className="reaction-row" role="button" tabIndex={0} onClick={() => onOpenState(state)} onKeyDown={(e) => e.key === "Enter" && onOpenState(state)}>

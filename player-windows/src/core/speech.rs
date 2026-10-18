@@ -26,14 +26,14 @@ impl PetSpeech {
         (1.6 + 0.16 * line.chars().count() as f64).clamp(2.5, 6.0)
     }
 
-    /// The lines a round may say. An action says its own; the usual
-    /// animation says its reaction's on every round of a triggered reaction,
-    /// and only on coming to a looping one.
-    pub fn pool(state: PetState, spec: &StateSpec, variant: Option<&StateVariant>, entered: bool) -> Vec<String> {
+    /// The lines a round may say: an action its own; the usual animation of
+    /// a triggered reaction its reaction's. Idle and sleep say something only
+    /// in their random actions.
+    pub fn pool(state: PetState, spec: &StateSpec, variant: Option<&StateVariant>) -> Vec<String> {
         if let Some(v) = variant {
             return v.lines.clone().unwrap_or_default();
         }
-        if state.loops() && !entered { Vec::new() } else { spec.lines.clone().unwrap_or_default() }
+        if state.loops() { Vec::new() } else { spec.lines.clone().unwrap_or_default() }
     }
 
     /// A line to say now, or `None`: nothing to say, or too soon after the last.
@@ -82,9 +82,8 @@ mod tests {
             variants: None,
         };
         let action = StateVariant { id: "v".into(), name: String::new(), tracks: vec![], lines: Some(vec!["yawn".into()]), every: None, chance: None };
-        assert_eq!(PetSpeech::pool(PetState::Idle, &spec, None, true), vec!["hi"]);
-        assert!(PetSpeech::pool(PetState::Idle, &spec, None, false).is_empty());
-        assert_eq!(PetSpeech::pool(PetState::Typing, &spec, None, false), vec!["hi"]);
-        assert_eq!(PetSpeech::pool(PetState::Idle, &spec, Some(&action), false), vec!["yawn"]);
+        assert!(PetSpeech::pool(PetState::Idle, &spec, None).is_empty(), "idle's usual animation says nothing");
+        assert_eq!(PetSpeech::pool(PetState::Typing, &spec, None), vec!["hi"]);
+        assert_eq!(PetSpeech::pool(PetState::Idle, &spec, Some(&action)), vec!["yawn"]);
     }
 }

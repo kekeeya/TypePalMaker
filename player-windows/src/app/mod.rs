@@ -727,7 +727,7 @@ impl App {
         let variant = spec.variant(self.behavior.variant.as_deref());
         // Idle carries on across rounds, except into and out of an action.
         let restart = new_round && (state != PetState::Idle || self.behavior.variant != self.shown_variant);
-        let pool = if new_round || entered { PetSpeech::pool(state, spec, variant, entered) } else { Vec::new() };
+        let pool = if new_round || entered { PetSpeech::pool(state, spec, variant) } else { Vec::new() };
         let played = match variant {
             Some(v) => spec.playing(v),
             None => spec.played_as(state),

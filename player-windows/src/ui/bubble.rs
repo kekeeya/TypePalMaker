@@ -46,27 +46,45 @@ pub fn paint(c: &mut Canvas, l: &BubbleLayout, tail_x: f32, below: bool) {
     } else {
         Frame::new(MARGIN, MARGIN, w - 2.0 * MARGIN, h - 2.0 * MARGIN - TAIL)
     };
-    let tx = tail_x.clamp(body.x + 18.0, body.max_x() - 18.0);
-    let tail = {
-        let mut p = PathBuilder::new();
-        let (base, tip) = if below { (body.y + 1.0, body.y - TAIL) } else { (body.max_y() - 1.0, body.max_y() + TAIL) };
-        p.move_to(tx - 8.0, base);
-        p.line_to(tx, tip);
-        p.line_to(tx + 8.0, base);
-        p.finish().unwrap()
-    };
-    let paper = rgb(0xFFFDF7);
-    let outline = rgb(0xE6DFD6);
+    let shape = outline(body, 14.0, tail_x.clamp(body.x + 22.0, body.max_x() - 22.0), below);
 
+    // One shape, bubble and tail: one fill and one outline.
     c.shadow(body, 14.0, 9.0, 3.0, rgba(0x333333, 0.12));
-    c.fill_rrect(body, 14.0, paper);
-    c.stroke_rrect(body, 14.0, 1.0, outline);
-    // The tail over the outline at its base, then its own two edges.
-    c.fill_path(&tail, paper);
-    c.stroke_path(&tail, 1.0, outline);
+    c.fill_path(&shape, rgb(0xFFFDF7));
+    c.stroke_path(&shape, 1.0, rgb(0xE6DFD6));
 
     for (i, text) in l.lines.iter().enumerate() {
         let mid = body.y + PADDING.1 + LINE * (i as f32 + 0.5);
         c.text(text, body.x + PADDING.0, baseline_for_center(mid, SIZE, Weight::Semibold), SIZE, Weight::Semibold, rgb(0x353754));
     }
+}
+
+/// The rounded body with the tail in its outline, under it (or over it,
+/// `tail_up`), 16 wide at its base, its tip at `tx`.
+fn outline(body: Frame, r: f32, tx: f32, tail_up: bool) -> tiny_skia::Path {
+    let (x0, x1, y0, y1) = (body.x, body.max_x(), body.y, body.max_y());
+    // A quarter circle as a cubic: the control points sit this far along.
+    let k = r * 0.552_284_8;
+    let mut p = PathBuilder::new();
+    p.move_to(x0 + r, y0);
+    if tail_up {
+        p.line_to(tx - 8.0, y0);
+        p.line_to(tx, y0 - TAIL);
+        p.line_to(tx + 8.0, y0);
+    }
+    p.line_to(x1 - r, y0);
+    p.cubic_to(x1 - r + k, y0, x1, y0 + r - k, x1, y0 + r);
+    p.line_to(x1, y1 - r);
+    p.cubic_to(x1, y1 - r + k, x1 - r + k, y1, x1 - r, y1);
+    if !tail_up {
+        p.line_to(tx + 8.0, y1);
+        p.line_to(tx, y1 + TAIL);
+        p.line_to(tx - 8.0, y1);
+    }
+    p.line_to(x0 + r, y1);
+    p.cubic_to(x0 + r - k, y1, x0, y1 - r + k, x0, y1 - r);
+    p.line_to(x0, y0 + r);
+    p.cubic_to(x0, y0 + r - k, x0 + r - k, y0, x0 + r, y0);
+    p.close();
+    p.finish().unwrap()
 }

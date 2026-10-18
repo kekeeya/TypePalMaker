@@ -1197,12 +1197,10 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .variant-empty div { display: flex; gap: 10px; }
 .primary-small { height: 34px; padding: 0 14px; border-radius: 11px; background: var(--purple); color: #fff; font-size: 11px; font-weight: 700; box-shadow: 0 3px 0 #5d55b8; }
 /* A line the pet may say, over the preview's top-right corner. */
-.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; max-width: 180px; padding: 8px 12px 9px; display: grid; gap: 3px; border: 1px solid #e6dfd6; border-radius: 14px; background: #fffdf7; filter: drop-shadow(0 6px 9px rgba(80, 66, 50, 0.14)); pointer-events: none; }
-/* The tail: an outline-coloured triangle, and over it a paper one that also
-   covers the bubble's border where the tail joins it. */
-.line-bubble::before, .line-bubble::after { content: ""; position: absolute; border-style: solid; border-color: transparent; border-bottom-width: 0; }
-.line-bubble::before { left: 33px; bottom: -10px; border-width: 9px 9px 0; border-top-color: #e6dfd6; }
-.line-bubble::after { left: 34px; bottom: -8px; border-width: 8px 8px 0; border-top-color: #fffdf7; }
+/* Bubble and tail are one shape: no border of their own, but an outline and
+   a shadow drawn round both together. */
+.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; max-width: 180px; padding: 9px 13px 10px; display: grid; gap: 3px; border-radius: 14px; background: #fffdf7; filter: drop-shadow(0 0 0.5px #b8ab9a) drop-shadow(0 0 0.5px #d6ccbf) drop-shadow(0 6px 9px rgba(80, 66, 50, 0.14)); pointer-events: none; }
+.line-bubble::after { content: ""; position: absolute; left: 34px; bottom: -8px; border-style: solid; border-color: #fffdf7 transparent transparent; border-width: 8px 8px 0; }
 .line-bubble b { font-size: 12px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .line-bubble small { font-size: 9px; color: var(--ink-soft); font-weight: 600; }
 .row-hint { align-self: center; margin-left: 12px; color: var(--ink-soft); font-size: 11px; font-weight: 600; white-space: nowrap; }

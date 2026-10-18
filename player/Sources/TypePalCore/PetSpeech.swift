@@ -22,13 +22,12 @@ public struct PetSpeech {
         min(6, max(2.5, 1.6 + 0.16 * Double(line.count)))
     }
 
-    /// The lines a round may say. An action says its own; the usual
-    /// animation says its reaction's on every round of a triggered reaction,
-    /// and only on coming to a looping one (idle's rounds are a few seconds
-    /// long, and would never stop talking).
-    public static func pool(_ state: PetState, spec: StateSpec, variant: StateVariant?, entered: Bool) -> [String] {
+    /// The lines a round may say: an action its own; the usual animation of
+    /// a triggered reaction its reaction's. Idle and sleep say something only
+    /// in their random actions.
+    public static func pool(_ state: PetState, spec: StateSpec, variant: StateVariant?) -> [String] {
         if let variant { return variant.lines ?? [] }
-        return state.loops && !entered ? [] : (spec.lines ?? [])
+        return state.loops ? [] : (spec.lines ?? [])
     }
 
     /// A line to say now, or nil: nothing to say, or too soon after the last.

@@ -104,7 +104,7 @@ export function Preview({ project }: { project: Project }) {
     const newRound = spoken.current.round !== shown.round;
     spoken.current = { state, round: shown.round };
     if (!entered && !newRound) return;
-    const said = speech.current.say(PetSpeech.pool(state, own, action, entered), now());
+    const said = speech.current.say(PetSpeech.pool(state, own, action), now());
     if (!said) return;
     setLine(said);
     window.clearTimeout(lineTimer.current);

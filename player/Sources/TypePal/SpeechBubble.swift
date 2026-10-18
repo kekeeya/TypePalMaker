@@ -109,43 +109,52 @@ final class BubbleView: NSView {
         let m = Self.margin
         var body = bounds.insetBy(dx: m, dy: m)
         if tail.below { body.size.height -= Self.tailHeight } else { body.origin.y += Self.tailHeight; body.size.height -= Self.tailHeight }
+        let path = Self.outline(body: body, radius: 14, tailX: min(max(tail.x, body.minX + 22), body.maxX - 22), tailUp: tail.below)
 
-        let path = NSBezierPath(roundedRect: body, xRadius: 14, yRadius: 14)
-        let tx = min(max(tail.x, body.minX + 18), body.maxX - 18)
-        let tailPath = NSBezierPath()
-        if tail.below {
-            tailPath.move(to: CGPoint(x: tx - 8, y: body.maxY - 1))
-            tailPath.line(to: CGPoint(x: tx, y: body.maxY + Self.tailHeight))
-            tailPath.line(to: CGPoint(x: tx + 8, y: body.maxY - 1))
-        } else {
-            tailPath.move(to: CGPoint(x: tx - 8, y: body.minY + 1))
-            tailPath.line(to: CGPoint(x: tx, y: body.minY - Self.tailHeight))
-            tailPath.line(to: CGPoint(x: tx + 8, y: body.minY + 1))
-        }
-        let paper = NSColor(srgbRed: 1, green: 0.992, blue: 0.969, alpha: 1)
-        let outline = NSColor(srgbRed: 0.902, green: 0.875, blue: 0.839, alpha: 1)
-
-        // Body and tail cast one shadow; the outline runs round both, not
-        // across the tail's base.
+        // One shape, bubble and tail: one shadow and one outline.
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor(white: 0.2, alpha: 0.18)
+        shadow.shadowColor = NSColor(white: 0.2, alpha: 0.16)
         shadow.shadowBlurRadius = 9
         shadow.shadowOffset = NSSize(width: 0, height: -3)
         shadow.set()
-        paper.setFill()
+        NSColor(srgbRed: 1, green: 0.992, blue: 0.969, alpha: 1).setFill()
         path.fill()
-        tailPath.fill()
         NSGraphicsContext.restoreGraphicsState()
-        outline.setStroke()
+        NSColor(srgbRed: 0.902, green: 0.875, blue: 0.839, alpha: 1).setStroke()
         path.lineWidth = 1
+        path.lineJoinStyle = .round
         path.stroke()
-        paper.setFill()
-        tailPath.fill()
-        tailPath.lineWidth = 1
-        tailPath.stroke()
 
         let textRect = body.insetBy(dx: Self.padding.width, dy: Self.padding.height)
         text.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine])
+    }
+
+    /// The rounded body with the tail in its outline, under it (or over it,
+    /// `tailUp`), 16 wide at its base, its tip at `tailX`.
+    private static func outline(body: NSRect, radius r: CGFloat, tailX tx: CGFloat, tailUp: Bool) -> NSBezierPath {
+        let (minX, maxX, minY, maxY) = (body.minX, body.maxX, body.minY, body.maxY)
+        let p = NSBezierPath()
+        p.move(to: CGPoint(x: minX + r, y: minY))
+        if !tailUp {
+            p.line(to: CGPoint(x: tx - 8, y: minY))
+            p.line(to: CGPoint(x: tx, y: minY - tailHeight))
+            p.line(to: CGPoint(x: tx + 8, y: minY))
+        }
+        p.line(to: CGPoint(x: maxX - r, y: minY))
+        p.appendArc(from: CGPoint(x: maxX, y: minY), to: CGPoint(x: maxX, y: minY + r), radius: r)
+        p.line(to: CGPoint(x: maxX, y: maxY - r))
+        p.appendArc(from: CGPoint(x: maxX, y: maxY), to: CGPoint(x: maxX - r, y: maxY), radius: r)
+        if tailUp {
+            p.line(to: CGPoint(x: tx + 8, y: maxY))
+            p.line(to: CGPoint(x: tx, y: maxY + tailHeight))
+            p.line(to: CGPoint(x: tx - 8, y: maxY))
+        }
+        p.line(to: CGPoint(x: minX + r, y: maxY))
+        p.appendArc(from: CGPoint(x: minX, y: maxY), to: CGPoint(x: minX, y: maxY - r), radius: r)
+        p.line(to: CGPoint(x: minX, y: minY + r))
+        p.appendArc(from: CGPoint(x: minX, y: minY), to: CGPoint(x: minX + r, y: minY), radius: r)
+        p.close()
+        return p
     }
 }

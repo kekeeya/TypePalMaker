@@ -415,10 +415,9 @@ final class RandomActionTests: XCTestCase {
     func testWhatARoundMaySay() {
         let spec = StateSpec(enabled: true, fps: 10, loop: true, frames: frame, lines: ["hi"])
         let action = StateVariant(id: "v", tracks: [], lines: ["yawn"])
-        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: nil, entered: true), ["hi"])
-        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: nil, entered: false), [])
-        XCTAssertEqual(PetSpeech.pool(.typing, spec: spec, variant: nil, entered: false), ["hi"])
-        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: action, entered: false), ["yawn"])
+        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: nil), [], "idle's usual animation says nothing")
+        XCTAssertEqual(PetSpeech.pool(.typing, spec: spec, variant: nil), ["hi"])
+        XCTAssertEqual(PetSpeech.pool(.idle, spec: spec, variant: action), ["yawn"])
     }
 
     func testAnActionWithoutPicturesPlaysTheUsualRows() {

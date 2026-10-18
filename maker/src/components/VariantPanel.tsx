@@ -79,14 +79,17 @@ export function VariantPanel({ state }: { state: PetState }) {
             </>
           )}
         </div>
-        <div className="variant-row">
-          <b>{t.lines}</b>
-          <LinesEditor
-            key={variant?.id ?? "regular"}
-            lines={variant ? variant.lines : (spec.lines ?? [])}
-            onChange={(lines) => setLines(state, variant?.id ?? null, lines)}
-          />
-        </div>
+        {/* Idle and sleep speak only in their random actions. */}
+        {(variant || !loops(state)) && (
+          <div className="variant-row">
+            <b>{t.lines}</b>
+            <LinesEditor
+              key={variant?.id ?? "regular"}
+              lines={variant ? variant.lines : (spec.lines ?? [])}
+              onChange={(lines) => setLines(state, variant?.id ?? null, lines)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -188,7 +188,8 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
       frames: readEntries(spec.frames),
       ...(spec.tracks !== undefined ? { tracks: spec.tracks.map(readTrack) } : {}),
       ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
-      ...(readLines(spec.lines).length ? { lines: readLines(spec.lines) } : {}),
+      // Idle and sleep speak only in their random actions.
+      ...(!loops(state) && readLines(spec.lines).length ? { lines: readLines(spec.lines) } : {}),
       ...(spec.variants?.length ? {
         variants: spec.variants.map((variant): StateVariant => {
           const every = variant.every;

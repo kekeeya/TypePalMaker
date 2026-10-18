@@ -218,7 +218,7 @@ final class PetController {
         shownVariant = behavior.variant
         if entered { debugLog("state → \(state.rawValue)") }
         animator.play(state, spec: variant.map(spec.playing) ?? spec.played(as: state), restart: restart)
-        if newRound || entered { speak(PetSpeech.pool(state, spec: spec, variant: variant, entered: entered), at: now) }
+        if newRound || entered { speak(PetSpeech.pool(state, spec: spec, variant: variant), at: now) }
 
         if let deadline = behavior.nextSleepDeadline(after: now) {
             sleepTimer.schedule(after: deadline - now + 0.01)
