@@ -32,7 +32,8 @@
 
 <table>
   <tr><th nowrap>Feature</th><th>What you get</th></tr>
-  <tr><td nowrap>5 reactions</td><td>Idle, Typing, Mouse Click, Tap Pet and Petting. Animate the ones you want and leave the rest off</td></tr>
+  <tr><td nowrap>6 reactions</td><td>Idle, Typing, Mouse Click, Tap Pet, Petting and Sleep (it nods off after a while without input and wakes when you come back). Animate the ones you want and leave the rest off</td></tr>
+  <tr><td nowrap>9 effects</td><td>Zzz, Heart, Sweat, Angry, Sad, Puzzled, Surprised, Music and Sparkle, layered over any reaction</td></tr>
   <tr><td nowrap>Animation editing</td><td>Set your own frame rate, then adjust each frame's length and order on the timeline, plus its position, scale and rotation. Undo / redo and a live animation preview included</td></tr>
   <tr><td nowrap>Live pet preview</td><td>Try your pet right inside the Maker and fine-tune it as you go</td></tr>
   <tr><td nowrap>Custom app icon</td><td>Uses the Idle picture by default, or upload any image you like</td></tr>
