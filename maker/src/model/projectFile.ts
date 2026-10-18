@@ -101,7 +101,7 @@ export function encodeProject(project: Project): Uint8Array {
       frames: own.filter((f) => used.has(f.id)).map(compactEntry),
       ...(spec.tracks !== undefined && !plain ? { tracks: spec.tracks.map(writeTrack) } : {}),
       ...(state === "sleep" ? { sleepAfterMinutes: spec.sleepAfterMinutes ?? 15 } : {}),
-      ...(spec.lines?.length ? { lines: spec.lines } : {}),
+      ...(spec.lines?.length && !loops(state) ? { lines: spec.lines } : {}),
       ...(spec.variants?.length ? {
         variants: spec.variants.map((variant) => ({
           id: variant.id,

@@ -1001,6 +1001,8 @@ impl App {
         if drag.dragging {
             self.clamp_to_screen();
             self.render();
+            // Pulled back inside the screen, perhaps: the bubble follows.
+            self.place_bubble();
             self.save_position();
             // Dropped on another monitor, perhaps one scaled differently.
             self.sync_scale();

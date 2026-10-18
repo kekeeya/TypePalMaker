@@ -4,6 +4,7 @@ import { useEditor } from "../store";
 import { entryAtCell, entryStartCell } from "../model/timeline";
 import { baseTrack, timelineTracks, variantRows } from "../model/types";
 import { FrameStack, useTimelinePlayer } from "./Sprite";
+import { PetSpeech } from "../model/behavior";
 
 /** The canvas's longer side on screen, at most; less when the window is
  *  small. */
@@ -75,7 +76,9 @@ export function CanvasView() {
   const variant = own.variants?.find((v) => v.id === variantId);
   // The tab shown, as it plays (see `variantRows`).
   const spec = useMemo(() => (variant ? { ...own, frames: [], tracks: variantRows(own, variant) } : own), [own, variant]);
-  const lines = variant ? variant.lines : (own.lines ?? []);
+  // The lines the tab would say on the desktop (none for idle's and sleep's
+  // usual animation).
+  const lines = PetSpeech.pool(state, own, variant);
   // One of the tab's lines, picked again when the tab or its lines change.
   const lineKey = `${state}|${variantId}|${lines.join("\n")}`;
   const line = useMemo(() => lines[Math.floor(Math.random() * lines.length)], [lineKey]);
