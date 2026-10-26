@@ -204,10 +204,9 @@ export function emptyStates(fps: number): Record<PetState, StateSpec> {
           loop: true,
           frames: [],
           sleepAfterMinutes: 15,
-          tracks: [
-            { id: "sleep-effects", name: "", frames: [] },
-            { id: "sleep-base", name: "", frames: [] },
-          ],
+          // One empty row, as every reaction starts; Zzz is a built-in
+          // effect added over it.
+          tracks: [{ id: "sleep-base", name: "", frames: [] }],
         }
       : withTracks({ enabled: STARTS_ENABLED[state], fps, loop: !PLAYS_ONCE[state], frames: [] });
   }

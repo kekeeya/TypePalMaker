@@ -208,10 +208,7 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
     };
     if (state !== "sleep") states[state] = withTracks(states[state]);
     else if (states.sleep.tracks === undefined) {
-      states.sleep.tracks = [
-        { id: "sleep-effects", name: "", frames: [] },
-        { id: "sleep-base", name: "", frames: states.sleep.frames },
-      ];
+      states.sleep.tracks = [{ id: "sleep-base", name: "", frames: states.sleep.frames }];
     }
   }
 

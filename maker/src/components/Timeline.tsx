@@ -65,11 +65,21 @@ export function Timeline() {
 
   /** A row's name: what the user called it, or else its kind (the sleep
    *  template's rows) or its place, in the interface language. */
-  const trackLabel = (track: FrameTrack, index: number) => {
-    if (track.name) return track.name;
+  /** A row's own name, or one from what it holds: the effect it was added
+   *  as, or the pet itself. An empty row is a new one ("新建轴", "新建轴 2"…,
+   *  counting the empty ones above it). */
+  const defaultLabel = (track: FrameTrack) => {
+    if (!track.frames.length) return null;
     const effect = effectOfRow(track.id);
     if (effect) return effect === "zzz" ? t.zzzTrack : t.effectNames[effect];
-    return track.id === "sleep-base" || track.id === "main" ? t.baseTrack : t.newTrackName(index + 1);
+    return track.id === "sleep-base" || track.id === "main" ? t.baseTrack : null;
+  };
+  const trackLabel = (track: FrameTrack, index: number) => {
+    if (track.name) return track.name;
+    const label = defaultLabel(track);
+    if (label) return label;
+    const before = tracks.slice(0, index).filter((row) => !row.name && !defaultLabel(row)).length;
+    return t.newTrackName(before + 1);
   };
   const shortName = (name: string) => {
     let width = 0;
