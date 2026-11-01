@@ -145,7 +145,6 @@ pub struct App {
     taskbar_created: u32,
     /// Closing a window hands activation back to the invisible host; that is
     /// not a click on the taskbar button.
-    ignore_activation_until: f64,
     /// Nobody can see the pet: the session is locked, or the display is off.
     locked: bool,
     display_off: bool,
@@ -283,7 +282,6 @@ pub fn run() {
         tray_added: false,
         tray_icon: app_icon(unsafe { GetSystemMetrics(SM_CXSMICON) }),
         taskbar_created,
-        ignore_activation_until: 0.0,
         locked: false,
         display_off: false,
         settings: None,
@@ -540,7 +538,7 @@ impl App {
             } else {
                 self.remove_tray();
                 SetWindowLongPtrW(self.host, GWL_EXSTYLE, (ex | WS_EX_APPWINDOW) as isize);
-                ShowWindow(self.host, SW_SHOWNOACTIVATE);
+                ShowWindow(self.host, SW_SHOWMINNOACTIVE);
             }
         }
     }
@@ -1238,20 +1236,11 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                 }
                 return 0;
             }
-            WM_ACTIVATE => {
-                // The taskbar button was clicked (or Alt+Tab chose the pet).
-                if loword(wparam) as u32 != WA_INACTIVE {
-                    with_app(|app| {
-                        if !app.prefs.use_tray_icon && app.now() >= app.ignore_activation_until {
-                            app.reopen();
-                        }
-                    });
-                }
-                return 0;
-            }
             WM_SYSCOMMAND => {
-                // A second click on the button would minimise the invisible
-                // window; it means "open" too.
+                // The host stays minimised, so a click on its taskbar button
+                // (or Alt+Tab choosing it) asks to restore it: that is the
+                // "open". Activation alone is not: Windows hands it focus
+                // whenever another window closes or is minimised.
                 let command = (wparam & 0xfff0) as u32;
                 if command == SC_MINIMIZE || command == SC_RESTORE {
                     with_app(|app| app.reopen());

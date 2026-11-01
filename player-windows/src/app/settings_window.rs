@@ -58,13 +58,14 @@ pub fn open(app: &mut App) {
     let class = wide(CLASS);
     let (style, ex) = style();
     let hwnd = unsafe {
-        CreateWindowExW(ex, class.as_ptr(), title.as_ptr(), style, CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, app.host, null_mut(), instance(), null())
+        CreateWindowExW(ex, class.as_ptr(), title.as_ptr(), style, CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, app.pet, null_mut(), instance(), null())
     };
     if hwnd.is_null() {
         return;
     }
-    // Above the pet, which floats: otherwise a pet parked mid-screen can sit
-    // on top of its own settings.
+    // Owned by the pet, so it stays above it (a pet parked mid-screen would
+    // otherwise sit on its own settings); not by the host, which is kept
+    // minimised and would hide what it owns.
     let scale = dpi_scale(hwnd);
     let view = SettingsView::new(app.settings_model());
     app.settings = Some(SettingsWindow { hwnd, view, scale, slider_dragging: false, login_failure: None });
@@ -322,7 +323,6 @@ unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LP
             WM_CLOSE => {
                 let r = window_rect(hwnd);
                 LAST_POS.set(Some((r.left, r.top)));
-                with_app(|app| app.ignore_activation_until = app.now() + 0.5);
                 DestroyWindow(hwnd);
                 return 0;
             }
