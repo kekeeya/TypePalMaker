@@ -3,10 +3,9 @@ import { assetBounds, type Box } from "../model/bounds";
 import { useT } from "../i18n/useT";
 import { iconRect, iconSource, ICON_SIDE, IDLE_COVER_ID } from "../model/icon";
 import type { FrameAsset, IconStyle, Project } from "../model/types";
-import { ColorWheel } from "./ColorWheel";
+import { ColorField } from "./ColorField";
 import { PlacementControls } from "./PlacementControls";
 
-const SWATCHES = ["#ffffff", "#fffaee", "#fdf0c4", "#e3f1fc", "#dff2ea", "#fde4ea", "#efedff", "#353754"];
 
 /** The visible part of a picture, or undefined until it is known. Null
  *  asks for no crop. */
@@ -136,35 +135,13 @@ export function IconDialog({
           </div>
           <div className="icon-controls">
             <PlacementControls value={style} size={size} disabled={!source} onChange={(patch) => setStyle((s) => ({ ...s, ...patch }))} />
-            <div className="background-picker">
-              <span>{t.background}</span>
-              <div className="swatches">
-                {SWATCHES.map((c) => (
-                  <button
-                    key={c}
-                    className={`swatch${style.background.toLowerCase() === c ? " on" : ""}`}
-                    style={{ background: c }}
-                    aria-label={c}
-                    onClick={() => {
-                      setWheelOpen(false);
-                      setStyle((s) => ({ ...s, background: c }));
-                    }}
-                  />
-                ))}
-                <button
-                  className={`swatch custom${SWATCHES.includes(style.background.toLowerCase()) && !wheelOpen ? "" : " on"}`}
-                  aria-label={t.customColor}
-                  aria-expanded={wheelOpen}
-                  title={t.customColor}
-                  onClick={() => setWheelOpen((o) => !o)}
-                />
-              </div>
-              {wheelOpen && (
-                <div className="wheel-popover">
-                  <ColorWheel value={style.background} onChange={(background) => setStyle((s) => ({ ...s, background }))} />
-                </div>
-              )}
-            </div>
+            <ColorField
+              label={t.background}
+              value={style.background}
+              open={wheelOpen}
+              onOpenChange={setWheelOpen}
+              onChange={(background) => setStyle((s) => ({ ...s, background }))}
+            />
           </div>
         </div>
         <div className="dialog-actions">

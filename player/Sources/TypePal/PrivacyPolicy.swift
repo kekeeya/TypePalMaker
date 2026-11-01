@@ -31,7 +31,7 @@ enum PrivacyPolicy {
             heading: "二、系统权限与输入感知",
             body: """
             TypePal 不申请任何系统权限（包括辅助功能、输入监控、屏幕录制等）。为了对你的操作做出反应，它只使用 macOS 向所有应用公开的以下信息：
-            1. 打字反应：只读取系统提供的「距离上一次按键过去了多久」，用来判断你是否正在打字。它无法得知你按了哪个键、输入了什么内容，也不会记录。
+            1. 打字反应：只读取系统提供的「距离上一次按键过去了多久」，用来判断你是否正在打字。它无法得知你按了哪个键、输入了什么内容，也不会记录。气泡里出现的台词是制作桌宠时预先写好的，和你输入的内容无关。
             2. 鼠标点击反应：只在你按下鼠标按键时得知「发生了一次点击」，不读取、不记录点击的位置和所在的应用。
             3. 点击与抚摸：鼠标移动时读取光标当前的位置，只用来判断光标是否落在 TypePal 身上（以区分你是点到了它还是在抚摸它），不记录光标的移动轨迹。
             4. 睡眠：只记下你最近一次使用键盘或鼠标（包括移动鼠标）的时间，一段时间没有操作就进入睡眠，一有操作就醒来。不记录你做了什么。
@@ -58,7 +58,7 @@ enum PrivacyPolicy {
             heading: "2. System permissions and input awareness",
             body: """
             TypePal asks for no system permissions (no Accessibility, Input Monitoring or Screen Recording). To react to what you do, it uses only the following information, which macOS makes available to every app:
-            1. Typing: it reads only "how long since the last key press", provided by the system, to tell whether you are typing. It cannot see which keys you press or what you type, and records nothing.
+            1. Typing: it reads only "how long since the last key press", provided by the system, to tell whether you are typing. It cannot see which keys you press or what you type, and records nothing. The lines in its speech bubble were written in advance by whoever made the pet; they have nothing to do with what you type.
             2. Mouse clicks: it learns only that "a click happened" when you press a mouse button. It does not read or record where you clicked or in which app.
             3. Clicking and petting: when the mouse moves, it reads where the pointer is, only to tell whether it is over TypePal (so it knows whether you clicked it or are petting it). It does not record where the pointer has been.
             4. Sleep: it notes only when you last used the keyboard or mouse (moving the mouse included), to fall asleep after a while without input and wake when there is some. It does not record what you did.

@@ -18,6 +18,21 @@ final class ManifestTests: XCTestCase {
     }
     """
 
+    func testReadsTheSpeechBubbleStyleKeepingItInRange() throws {
+        XCTAssertEqual(try decode(base).speech, PetManifest.SpeechStyle())
+        let styled = base.replacingOccurrences(
+            of: #""display""#,
+            with: ##""speech": { "offsetX": 0.25, "offsetY": -9, "bubbleColor": "#353754", "textColor": "red", "fontSize": 40, "bubbleSize": 1.5 }, "display""##
+        )
+        let speech = try decode(styled).speech
+        XCTAssertEqual(speech.offsetX, 0.25)
+        XCTAssertEqual(speech.offsetY, -2, "far offsets are pulled in")
+        XCTAssertEqual(speech.bubbleColor, "#353754")
+        XCTAssertEqual(speech.textColor, "#353754", "not a colour: the default")
+        XCTAssertEqual(speech.fontSize, 24)
+        XCTAssertEqual(speech.bubbleSize, 1.5)
+    }
+
     func testDecodesBothFrameFormsAndDurations() throws {
         let manifest = try decode(base)
         let idle = try XCTUnwrap(manifest.playable(.idle))
@@ -226,6 +241,30 @@ final class SpriteTimelineTests: XCTestCase {
         (entries, next) = t.frames(at: 0.375)
         XCTAssertEqual(entries.map { $0?.id }, [nil, "base"])
         XCTAssertEqual(next, 0.5, accuracy: 1e-9)
+    }
+
+    func testAGapShowsNothingAndCountsInTheRound() {
+        // An effect that comes in at the 3rd step and again after a 1-step gap.
+        let t = SpriteTimeline(spec: StateSpec(
+            enabled: true, fps: 8, loop: false, frames: [],
+            tracks: [
+                FrameTrack(id: "fx", name: "", frames: [FrameEntry(id: "a", delay: 250), FrameEntry(id: "b", delay: 125)]),
+                FrameTrack(id: "main", name: "", frames: [FrameEntry(id: "base", duration: 375)])
+            ]
+        ))
+        XCTAssertEqual(t.length, 0.625, accuracy: 1e-9)
+        var (entries, next) = t.frames(at: 0)
+        XCTAssertEqual(entries.map { $0?.id }, [nil, "base"])
+        XCTAssertEqual(next, 0.25, accuracy: 1e-9)
+        (entries, next) = t.frames(at: 0.25)
+        XCTAssertEqual(entries.map { $0?.id }, ["a", "base"])
+        XCTAssertEqual(next, 0.375, accuracy: 1e-9)
+        (entries, next) = t.frames(at: 0.375)
+        XCTAssertEqual(entries.map { $0?.id }, [nil, nil])
+        XCTAssertEqual(next, 0.5, accuracy: 1e-9)
+        (entries, _) = t.frames(at: 0.5)
+        XCTAssertEqual(entries.map { $0?.id }, ["b", nil])
+        XCTAssertFalse(SpriteTimeline(spec: StateSpec(enabled: true, fps: 4, loop: true, frames: [FrameEntry(id: "a", delay: 250)])).isStill)
     }
 
     func testAStateWithoutTracksIsOneTrack() {

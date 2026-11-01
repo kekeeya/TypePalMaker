@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/useT";
-import { HERO_URL } from "../model/template";
 import { CANVAS_LIMITS, clamp, DEFAULT_CANVAS, DEFAULT_FPS, FPS_OPTIONS, type Canvas } from "../model/types";
 import { Chevron, Sparkle } from "./TitleBar";
 
@@ -126,7 +125,6 @@ export function CreateDialog({ onCancel, onCreate }: { onCancel: () => void; onC
             <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
         </button>
-        <img className="create-mascot" src={HERO_URL} alt="" draggable={false} />
         <h2>{t.createTitle}</h2>
         <label className="field">
           <span>{t.projectName}</span>

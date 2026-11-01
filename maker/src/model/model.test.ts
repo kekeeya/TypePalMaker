@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { PetBehavior, PetSpeech, playedAs, StrokeRecognizer, StrokeTuning } from "./behavior";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fitRect } from "./placement";
+import { entryAtCell, entryStartCell, placeEntry, trackCells } from "./timeline";
 import { decodeProject, encodeProject } from "./projectFile";
-import { baseTrack, displayHeight, emptyProject, frameSpan, PET_STATES, spanDuration, type FrameEntry, type PetState, type StateSpec } from "./types";
+import { baseTrack, DEFAULT_SPEECH, displayHeight, emptyProject, frameSpan, PET_STATES, spanDuration, type FrameEntry, type PetState, type StateSpec } from "./types";
 import { validate } from "./validate";
 import { BUILT_IN_EFFECTS, EFFECT_KINDS, effectOfRow, effectRowId } from "./template";
 
@@ -249,7 +250,7 @@ describe("project file", () => {
     p.states.idle.variants = [{ id: "v-1", name: "n", tracks: [], lines: [], every: [90, 30] }];
     p.states.typing.variants = [{ id: "v-2", name: "n", tracks: [], lines: ["  ", "x".repeat(40)], chance: 3 }];
     const back = await decodeProject(encodeProject(p));
-    expect(back.states.idle.variants?.[0].every).toEqual([300, 600]);
+    expect(back.states.idle.variants?.[0].every).toEqual([60, 180]);
     expect(back.states.typing.variants?.[0].chance).toBe(1);
     expect(back.states.typing.variants?.[0].lines).toEqual(["x".repeat(30)]);
   });
@@ -319,6 +320,42 @@ describe("timeline frames", () => {
     expect(frameSpan({ id: "a" }, 8)).toBe(1);
     expect(frameSpan({ id: "a", duration: 625 }, 8)).toBe(5);
     expect(frameSpan({ id: "a", duration: 10 }, 8)).toBe(1);
+  });
+
+  it("leaves gaps where a frame comes in later", async () => {
+    // At 8 fps: nothing for 2 frames, "a" for 1, nothing for 1, "b" for 2.
+    const track = { id: "fx", name: "", frames: [{ id: "a", delay: 250 }, { id: "b", duration: 250, delay: 125 }] };
+    expect(trackCells(track, 8)).toBe(6);
+    expect([0, 1, 2, 3, 4, 5, 6].map((cell) => entryAtCell(track, 8, cell)?.entry.id ?? null)).toEqual([null, null, "a", null, "b", "b", null]);
+    expect(entryStartCell(track, 8, 1)).toBe(4);
+
+    // "b" moved to the front: "a" keeps its place, with no gap left before it.
+    expect(placeEntry(track.frames, 8, 1, 0)).toEqual({ index: 0, frames: [{ id: "b", duration: 250 }, { id: "a" }] });
+    // "a" moved after "b": "b" now waits the 4 frames before it.
+    expect(placeEntry(track.frames, 8, 0, 6)).toEqual({ index: 1, frames: [{ id: "b", duration: 250, delay: 500 }, { id: "a" }] });
+
+    const p = emptyProject("gaps");
+    const asset = (id: string) => ({ id, name: id, png: new Uint8Array([1]), width: 1, height: 1, url: "" });
+    p.frames = { a: asset("a"), b: asset("b") };
+    p.frameOrder = ["a", "b"];
+    p.states.pet.tracks = [track, { id: "main", name: "", frames: [{ id: "a", duration: 750 }] }];
+    const back = await decodeProject(encodeProject(p));
+    expect(back.states.pet.tracks?.[0].frames).toMatchObject([{ id: "a", delay: 250 }, { id: "b", duration: 250, delay: 125 }]);
+  });
+
+  it("keeps the speech bubble's look, its offsets as shares of the pet's height", async () => {
+    const p = emptyProject("speech", { width: 400, height: 200, dpi: 144 });
+    expect((await decodeProject(encodeProject(p))).speech).toBeUndefined();
+    p.speech = { offsetX: 50, offsetY: -20, bubbleColor: "#353754", textColor: "#fff3c4", fontSize: 18, bubbleSize: 1.4 };
+    const bytes = encodeProject(p);
+    const manifest = JSON.parse(strFromU8(unzipSync(bytes)["manifest.json"]));
+    expect(manifest.speech).toEqual({ offsetX: 0.25, offsetY: -0.1, bubbleColor: "#353754", textColor: "#fff3c4", fontSize: 18, bubbleSize: 1.4 });
+    expect((await decodeProject(bytes)).speech).toEqual(p.speech);
+    // Anything unusable is left as designed; far values are pulled in.
+    manifest.speech = { offsetX: 9, textColor: "red", fontSize: 3 };
+    const files = unzipSync(bytes);
+    files["manifest.json"] = strToU8(JSON.stringify(manifest));
+    expect((await decodeProject(zipSync(files))).speech).toEqual({ ...DEFAULT_SPEECH, offsetX: 400, fontSize: 10 });
   });
 
   it("places pictures standing on the canvas floor", () => {

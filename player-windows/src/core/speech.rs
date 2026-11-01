@@ -71,7 +71,7 @@ mod tests {
             enabled: true,
             fps: 10.0,
             looping: true,
-            frames: vec![FrameEntry { id: "f".into(), duration: None }],
+            frames: vec![FrameEntry { id: "f".into(), duration: None, delay: None }],
             tracks: None,
             sleep_after_minutes: None,
             lines: Some(vec!["hi".into()]),

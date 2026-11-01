@@ -142,7 +142,7 @@ function VariantTab({ state, variant, selected }: { state: PetState; variant: St
   );
 }
 
-/** Three ready-made frequencies, or numbers of one's own: minutes between
+/** Three ready-made frequencies, or numbers of one's own: seconds between
  *  plays for a looping reaction, a chance per trigger for any other. */
 function FrequencyControl({ state, variant }: { state: PetState; variant: StateVariant }) {
   const t = useT();
@@ -155,7 +155,7 @@ function FrequencyControl({ state, variant }: { state: PetState; variant: StateV
   );
   const [custom, setCustom] = useState(!preset);
   const set = (frequency: Pick<StateVariant, "every" | "chance">) => setVariantFrequency(state, variant.id, frequency);
-  const [shortest, longest] = every.map((seconds) => Math.max(1, Math.round(seconds / 60)));
+  const [shortest, longest] = every.map((seconds) => Math.max(1, Math.round(seconds)));
 
   return (
     <div className="frequency">
@@ -186,9 +186,9 @@ function FrequencyControl({ state, variant }: { state: PetState; variant: StateV
               <Stepper
                 value={shortest}
                 min={1}
-                max={1440}
-                onChange={(m) => set({ every: [m * 60, Math.max(m, longest) * 60] })}
-                label={t.shortestMinutes}
+                max={86400}
+                onChange={(s) => set({ every: [s, Math.max(s, longest)] })}
+                label={t.shortestSeconds}
                 fewer={t.less}
                 more={t.more}
               />
@@ -196,9 +196,9 @@ function FrequencyControl({ state, variant }: { state: PetState; variant: StateV
               <Stepper
                 value={longest}
                 min={1}
-                max={1440}
-                onChange={(m) => set({ every: [Math.min(m, shortest) * 60, m * 60] })}
-                label={t.longestMinutes}
+                max={86400}
+                onChange={(s) => set({ every: [Math.min(s, shortest), s] })}
+                label={t.longestSeconds}
                 fewer={t.less}
                 more={t.more}
               />

@@ -11,20 +11,25 @@ public enum PetState: String, CaseIterable, Codable, Sendable {
     case sleep
 }
 
-/// One frame in a state's sequence: which image, and for how long.
+/// One frame in a state's sequence: which image, for how long, and how long
+/// its row shows nothing before it.
 public struct FrameEntry: Equatable, Sendable {
     public let id: String
     /// Milliseconds. Nil means "1 / fps".
     public let duration: Double?
+    /// Milliseconds of nothing before the frame, in a row other than the
+    /// pet's own (an effect that comes in later). Nil means none.
+    public let delay: Double?
 
-    public init(id: String, duration: Double? = nil) {
+    public init(id: String, duration: Double? = nil, delay: Double? = nil) {
         self.id = id
         self.duration = duration
+        self.delay = delay
     }
 }
 
 extension FrameEntry: Decodable {
-    private enum CodingKeys: String, CodingKey { case id, duration }
+    private enum CodingKeys: String, CodingKey { case id, duration, delay }
 
     /// Accepts both the short form `"a1b2"` and `{ "id": "a1b2", "duration": 500 }`.
     public init(from decoder: Decoder) throws {
@@ -36,7 +41,8 @@ extension FrameEntry: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             id: try container.decode(String.self, forKey: .id),
-            duration: try container.decodeIfPresent(Double.self, forKey: .duration)
+            duration: try container.decodeIfPresent(Double.self, forKey: .duration),
+            delay: try container.decodeIfPresent(Double.self, forKey: .delay)
         )
     }
 }
@@ -137,7 +143,7 @@ public struct StateSpec: Decodable, Equatable, Sendable {
     public var timelineDuration: TimeInterval {
         timelineTracks.map { track in
             track.frames.reduce(0) { total, entry in
-                total + ((entry.duration.map { $0 / 1000 }) ?? (1 / fps))
+                total + max(0, entry.delay ?? 0) / 1000 + ((entry.duration.map { $0 / 1000 }) ?? (1 / fps))
             }
         }.max() ?? 0
     }
@@ -167,15 +173,54 @@ public struct PetManifest: Decodable, Sendable {
         public let file: String
     }
 
+    /// The speech bubble as the maker set it: where it sits against its
+    /// usual place, centred over the head (shares of the pet's height, x to
+    /// the right and y down), its colours, its text size in points, and how
+    /// roomy it is (1 = as designed).
+    public struct SpeechStyle: Decodable, Sendable, Equatable {
+        public var offsetX: Double = 0
+        public var offsetY: Double = 0
+        public var bubbleColor = "#FFFDF7"
+        public var textColor = "#353754"
+        public var fontSize: Double = 13
+        public var bubbleSize: Double = 1
+
+        public init() {}
+
+        private enum CodingKeys: String, CodingKey { case offsetX, offsetY, bubbleColor, textColor, fontSize, bubbleSize }
+
+        /// Missing or unusable values keep the default; numbers are kept in
+        /// range.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            func number(_ key: CodingKeys, _ range: ClosedRange<Double>, _ fallback: Double) -> Double {
+                guard let value = try? container.decodeIfPresent(Double.self, forKey: key), value.isFinite else { return fallback }
+                return min(max(value, range.lowerBound), range.upperBound)
+            }
+            func color(_ key: CodingKeys, _ fallback: String) -> String {
+                guard let value = try? container.decodeIfPresent(String.self, forKey: key),
+                      value.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil else { return fallback }
+                return value
+            }
+            offsetX = number(.offsetX, -2...2, 0)
+            offsetY = number(.offsetY, -2...2, 0)
+            bubbleColor = color(.bubbleColor, bubbleColor)
+            textColor = color(.textColor, textColor)
+            fontSize = number(.fontSize, 10...24, 13)
+            bubbleSize = number(.bubbleSize, 0.6...2, 1)
+        }
+    }
+
     public let schemaVersion: Int
     public let name: String
     public let id: String
     public let display: Display
     public let frames: [String: FrameRef]
     public let states: [PetState: StateSpec]
+    public let speech: SpeechStyle
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, name, id, display, frames, states
+        case schemaVersion, name, id, display, frames, states, speech
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,6 +230,7 @@ public struct PetManifest: Decodable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         display = try container.decode(Display.self, forKey: .display)
         frames = try container.decode([String: FrameRef].self, forKey: .frames)
+        speech = (try? container.decodeIfPresent(SpeechStyle.self, forKey: .speech)) ?? SpeechStyle()
 
         // Decoded through String keys so that a key from a newer schema is
         // skipped rather than failing the whole pet.

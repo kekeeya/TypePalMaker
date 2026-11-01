@@ -59,6 +59,18 @@
         }
       }
     },
+    "speech": {
+      "type": "object",
+      "description": "The speech bubble, for every line the pet says; each part as designed when absent. Unusable values are ignored, numbers pulled into range.",
+      "properties": {
+        "offsetX": { "type": "number", "minimum": -2, "maximum": 2, "description": "From its usual place centred over the head, as a share of the pet's height; to the right. The tail still points at the head." },
+        "offsetY": { "type": "number", "minimum": -2, "maximum": 2, "description": "As offsetX, downwards." },
+        "bubbleColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "The bubble and its tail; #FFFDF7 by default." },
+        "textColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "The line; #353754 by default." },
+        "fontSize": { "type": "number", "minimum": 10, "maximum": 24, "description": "Points; 13 by default. Line height and the longest line grow with it." },
+        "bubbleSize": { "type": "number", "minimum": 0.6, "maximum": 2, "description": "Padding and corner radius against the design's; 1 by default." }
+      }
+    },
     "iconStyle": {
       "type": "object",
       "description": "Maker only: how icon.png is placed on the app icon (offsets in 512-px icon units, scale and rotation about the icon's centre, background colour). The runtime ignores it.",
@@ -171,6 +183,7 @@
                       "properties": {
                         "id": { "type": "string" },
                         "duration": { "type": "number", "exclusiveMinimum": 0 },
+                        "delay": { "type": "number", "minimum": 0 },
                         "scale": { "type": "number", "exclusiveMinimum": 0 },
                         "offsetX": { "type": "number" },
                         "offsetY": { "type": "number" },
@@ -203,6 +216,11 @@
                     "type": "number",
                     "exclusiveMinimum": 0,
                     "description": "Milliseconds; overrides 1/fps for this frame"
+                  },
+                  "delay": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Milliseconds its row shows nothing before this frame (an effect that comes in later); 0 when absent"
                   },
                   "scale": {
                     "type": "number",

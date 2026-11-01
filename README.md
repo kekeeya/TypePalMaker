@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/readme/typepal-idle.gif" alt="TypePal 小团子" width="200">
+  <img src=".github/readme/ren-idle-coffee.gif" alt="Ren，内置模板桌宠" width="200">
 </p>
 
 <p align="center">
@@ -34,10 +34,12 @@
   <tr><th nowrap>功能</th><th>说明</th></tr>
   <tr><td nowrap>自由配置 6 种反应动画</td><td>默认（待机）、打字、鼠标点击、点宠物、抚摸、睡眠（闲置一段时间后自动入睡，有操作就醒来）</td></tr>
   <tr><td nowrap>自由配置 9 种特效反应</td><td>Zzz、爱心、汗滴、生气、伤心、疑惑、惊讶、音符、亮晶晶，可叠加在任意反应动画上</td></tr>
-  <tr><td nowrap>动画编辑</td><td>自定义帧率，可独立配置动画时间轴上每帧图的时长&顺序，以及图片位置、缩放、旋转；支持撤销 / 重做和实时预览动画效果</td></tr>
+  <tr><td nowrap>动画编辑</td><td>自定义帧率；多条轨道叠加，可独立配置每帧图的时长、顺序以及图片位置、缩放、旋转；帧图可在轨道之间拖动，特效可放在任意时间点，支持复制粘贴；支持撤销 / 重做和实时预览动画效果</td></tr>
+  <tr><td nowrap>随机小动作</td><td>每种反应都可以加若干个随机小动作：待机和睡眠时按设定的间隔不定时插播，其他反应按概率替换原动画</td></tr>
+  <tr><td nowrap>对话气泡</td><td>给反应和小动作配台词，播放时在桌宠头顶冒出气泡；在「对话」页调整气泡位置、颜色和文字大小</td></tr>
   <tr><td nowrap>实时预览效果</td><td>制作器包含实时预览功能，方便你及时调整效果</td></tr>
   <tr><td nowrap>自定义桌宠图标</td><td>默认使用待机状态图片，也可以自由上传定制</td></tr>
-  <tr><td nowrap>内置模板</td><td>内置模板桌宠可直接上手修改；工程自动保存本地，也可导出 <code>.typepalproj</code> 本地备份</td></tr>
+  <tr><td nowrap>内置模板</td><td>内置模板桌宠 Ren 可直接上手修改；工程自动保存本地，也可导出 <code>.typepalproj</code> 本地备份</td></tr>
   <tr><td nowrap>桌宠设置</td><td>生成的桌宠可调开机自启动、大小、置顶、锁定位置、鼠标穿透等</td></tr>
   <tr><td nowrap>隐私友好</td><td>桌宠不申请辅助功能、输入监控等任何系统权限，不联网，也不记录你输入的内容</td></tr>
 </table>

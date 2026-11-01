@@ -46,21 +46,7 @@ export function PlacementControls({
           onChange={(e) => onChange({ scale: Number(e.target.value) / 100 })}
         />
       </div>
-      <div className="move-image">
-        <div className="move-heading">
-          <span>{t.moveImage}</span>
-          <small>{t.moveStep(STEP)}</small>
-        </div>
-        <div className="move-pad">
-          <button aria-label={t.moveUp} disabled={disabled} onClick={() => move(0, -STEP)}><Arrow rotate={0} /></button>
-          <button aria-label={t.moveLeft} disabled={disabled} onClick={() => move(-STEP, 0)}><Arrow rotate={-90} /></button>
-          <button className="move-center" aria-label={t.moveCenter} disabled={disabled} onClick={() => onChange({ offsetX: 0, offsetY: 0 })}>
-            <i />
-          </button>
-          <button aria-label={t.moveRight} disabled={disabled} onClick={() => move(STEP, 0)}><Arrow rotate={90} /></button>
-          <button aria-label={t.moveDown} disabled={disabled} onClick={() => move(0, STEP)}><Arrow rotate={180} /></button>
-        </div>
-      </div>
+      <MovePad label={t.moveImage} disabled={disabled} onMove={move} onCenter={() => onChange({ offsetX: 0, offsetY: 0 })} />
       <div className="transform-group">
         <label>
           <span>{t.rotation}</span>
@@ -84,6 +70,39 @@ export function PlacementControls({
         {t.reset}
       </button>
     </>
+  );
+}
+
+/** Four arrows, a step of canvas pixels each, round a button back to the
+ *  middle: the "移动图像" pad, for a frame, the icon or the speech bubble. */
+export function MovePad({
+  label,
+  disabled = false,
+  onMove,
+  onCenter,
+}: {
+  label: string;
+  disabled?: boolean;
+  onMove: (x: number, y: number) => void;
+  onCenter: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="move-image">
+      <div className="move-heading">
+        <span>{label}</span>
+        <small>{t.moveStep(STEP)}</small>
+      </div>
+      <div className="move-pad">
+        <button aria-label={t.moveUp} disabled={disabled} onClick={() => onMove(0, -STEP)}><Arrow rotate={0} /></button>
+        <button aria-label={t.moveLeft} disabled={disabled} onClick={() => onMove(-STEP, 0)}><Arrow rotate={-90} /></button>
+        <button className="move-center" aria-label={t.moveCenter} disabled={disabled} onClick={onCenter}>
+          <i />
+        </button>
+        <button aria-label={t.moveRight} disabled={disabled} onClick={() => onMove(STEP, 0)}><Arrow rotate={90} /></button>
+        <button aria-label={t.moveDown} disabled={disabled} onClick={() => onMove(0, STEP)}><Arrow rotate={180} /></button>
+      </div>
+    </div>
   );
 }
 

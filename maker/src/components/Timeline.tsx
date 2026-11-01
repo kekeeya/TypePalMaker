@@ -1,13 +1,27 @@
-import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { horizontalListSortingStrategy, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useDroppable,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type ClientRect,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type Over,
+} from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useRef, useState, type CSSProperties, type DragEvent, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useT } from "../i18n/useT";
 import { importNotice } from "../i18n/strings";
 import { IMAGE_ACCEPT, importFiles, importSideFor, type ImportResult } from "../model/imageImport";
-import { entryStartCell, trackCells } from "../model/timeline";
+import { dropEntry, entryStartCell, trackCells, withoutEntry } from "../model/timeline";
 import { builtInEffectFrames, effectOfRow, effectRowId, type BuiltInEffect } from "../model/template";
-import { baseTrack, frameSpan, type FrameAsset, type FrameTrack } from "../model/types";
+import { baseTrack, delaySpan, frameSpan, type FrameAsset, type FrameTrack } from "../model/types";
 import { rowsIn, useEditor } from "../store";
 import { pickImages } from "./pickImages";
 import { EffectDialog } from "./EffectDialog";
@@ -39,7 +53,7 @@ export function Timeline() {
   const selected = useEditor((s) => s.selectedIndex);
   const selectedTrackId = useEditor((s) => s.selectedTrackId);
   const selectedVariantId = useEditor((s) => s.selectedVariantId);
-  const { selectFrame, selectTrack, moveFrame, removeFrame, setSpan, addFrames, replaceFrame, addTrack, removeTrack, renameTrack, moveTrack } = useEditor.getState();
+  const { selectFrame, selectTrack, moveFrameTo, removeFrame, setSpan, addFrames, replaceFrame, addTrack, removeTrack, renameTrack, moveTrack } = useEditor.getState();
   const input = useRef<HTMLInputElement>(null);
   const uploadTrack = useRef<string | null>(null);
   const [cell, setCell] = useState(DEFAULT_CELL);
@@ -47,6 +61,9 @@ export function Timeline() {
   /** The track whose name is being typed, if one is. */
   const [renaming, setRenaming] = useState<string | null>(null);
   const [addingEffect, setAddingEffect] = useState(false);
+  /** The frame being dragged, and where it would land. */
+  const [dragged, setDragged] = useState<{ trackId: string; index: number } | null>(null);
+  const [hint, setHint] = useState<DropHint | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { fps } = project;
@@ -56,6 +73,8 @@ export function Timeline() {
   const variant = spec.variants?.find((v) => v.id === selectedVariantId);
   /** A random action with no pictures, not even a row of its own added. */
   const emptyVariant = !!variant && tracks.length <= 1 && tracks.every((track) => !track.frames.length);
+  /** The empty action whose own row was asked for: its timeline shows. */
+  const [openedVariant, setOpenedVariant] = useState<string | null>(null);
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? baseTrack(tracks);
   const total = Math.max(0, ...tracks.map((track) => trackCells(track, fps)));
   const selectedStart = selected === null || !selectedTrack ? 0 : entryStartCell(selectedTrack, fps, selected);
@@ -148,6 +167,92 @@ export function Timeline() {
     window.addEventListener("pointerup", finish);
   };
 
+  /** A row is dragged by its name onto another row's place; a frame onto
+   *  the row under the pointer. */
+  const collision: CollisionDetection = (args) => {
+    const clip = clipOf(String(args.active.id)) !== null;
+    const prefix = clip ? ZONE : "row-";
+    const droppableContainers = args.droppableContainers.filter((c) => String(c.id).startsWith(prefix));
+    return clip ? pointerWithin({ ...args, droppableContainers }) : closestCenter({ ...args, droppableContainers });
+  };
+
+  /** A row moves among the rows. A frame lands on the row it is dropped on,
+   *  at the cell its left edge is nearest: anywhere the timeline reaches on
+   *  an effect's row, between frames on the pet's own (see `dropEntry`). */
+  // ⌘C / ⌘V (Ctrl on Windows): the selected frame, pasted after the
+  // selected one. Text being edited or selected keeps the usual copy.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']") || window.getSelection()?.toString()) return;
+      // Not behind a dialog, the preview or anything else over the page.
+      if (document.querySelector(".overlay")) return;
+      const editor = useEditor.getState();
+      if (key === "c" && editor.selectedIndex !== null) {
+        e.preventDefault();
+        editor.copyFrame(state);
+      } else if (key === "v" && editor.copiedFrame) {
+        e.preventDefault();
+        editor.pasteFrame(state);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state]);
+
+  const draggedEntry = dragged && tracks.find((track) => track.id === dragged.trackId)?.frames[dragged.index];
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragged(null);
+    setHint(null);
+    if (!over) return;
+    if (!clipOf(String(active.id))) {
+      if (active.id !== over.id) moveTrack(state, rowIds.indexOf(String(active.id)), rowIds.indexOf(String(over.id)));
+      return;
+    }
+    const landing = landingOf(String(active.id), over, active.rect.current.translated);
+    if (!landing) return;
+    const { clip, target, start } = landing;
+    const source = tracks.find((track) => track.id === clip.trackId)!;
+    if (target === source && start === entryStartCell(source, fps, clip.index)) return;
+    moveFrameTo(state, clip.trackId, clip.index, target.id, start);
+  };
+
+  /** Where a dragged frame would land: its row, the cell its left edge is
+   *  nearest, and where to show it — a box where it would go on an
+   *  effect's row, a line between frames on the pet's own. Null where it
+   *  cannot go. */
+  const landingOf = (activeId: string, over: Over | null, edge: ClientRect | null) => {
+    const clip = clipOf(activeId);
+    const target = over && tracks.find((track) => `${ZONE}${track.id}` === over.id);
+    const source = clip && tracks.find((track) => track.id === clip.trackId);
+    const entry = clip && source?.frames[clip.index];
+    if (!clip || !over || !edge || !target || !source || !entry) return null;
+    const span = frameSpan(entry, fps);
+    const free = target !== baseTrack(tracks);
+    let start = Math.max(0, Math.round((edge.left - over.rect.left) / cell));
+    if (free) start = Math.min(start, Math.max(0, total - span));
+    const rest = target === source ? withoutEntry(source.frames, clip.index, source !== baseTrack(tracks), fps) : target.frames;
+    const dropped = dropEntry(rest, entry, start, free, target !== source, fps);
+    if (!dropped) return null;
+    let shown: number;
+    if (free) shown = entryStartCell({ ...target, frames: dropped.frames }, fps, dropped.index);
+    else {
+      // The gap between frames as the row looks now, the frame still in it.
+      const at = dropEntry(target.frames, entry, start, false, true, fps)!.index;
+      shown = at < target.frames.length ? entryStartCell(target, fps, at) : trackCells(target, fps);
+    }
+    return { clip, target, start, hint: { trackId: target.id, cell: shown, span, line: !free } };
+  };
+
+  const onDragMove = ({ active, over }: DragMoveEvent) => {
+    const next = landingOf(String(active.id), over, active.rect.current.translated)?.hint ?? null;
+    setHint((now) => (now?.trackId === next?.trackId && now?.cell === next?.cell && now?.line === next?.line ? now : next));
+  };
+
   return (
     <section
       className="timeline soft-card"
@@ -189,19 +294,21 @@ export function Timeline() {
         </div>
       </div>
       <VariantPanel state={state} />
-      {emptyVariant ? (
+      {emptyVariant && (openedVariant !== variant.id || !tracks.length) ? (
         <div className="variant-empty">
           <b>{t.emptyVariantTitle}</b>
           <p>{t.emptyVariantBody}</p>
           <div>
+            {/* The action has its row already, empty: it is shown, not a second added. */}
             <button
               className="primary-small"
-              onClick={async () => {
-                const files = await pickImages({ multiple: true, label: t.imageFiles, fallback: () => input.current?.click() });
-                if (files?.length) void add(files, tracks[0]?.id ?? null);
+              onClick={() => {
+                setOpenedVariant(variant.id);
+                if (tracks[0]) selectTrack(tracks[0].id);
+                else addTrack(state);
               }}
             >
-              ＋ {t.addFrames}
+              ＋ {t.addTrack}
             </button>
             <button className="built-in-effect-button" onClick={() => setEffectsOpen(true)}>
               ✦ {t.addBuiltInEffect}
@@ -229,20 +336,19 @@ export function Timeline() {
             </div>
             <DndContext
               sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={({ active, over }) => {
-                if (!over || active.id === over.id) return;
-                moveTrack(state, rowIds.indexOf(String(active.id)), rowIds.indexOf(String(over.id)));
+              collisionDetection={collision}
+              onDragStart={({ active }) => setDragged(clipOf(String(active.id)))}
+              onDragMove={onDragMove}
+              onDragEnd={onDragEnd}
+              onDragCancel={() => {
+                setDragged(null);
+                setHint(null);
               }}
             >
               <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
                 {tracks.map((track, trackIndex) => {
                   const spans = track.frames.map((entry) => frameSpan(entry, fps));
-                  const ids = track.frames.map((_, index) => `${track.id}-clip-${index}`);
-                  const onDragEnd = ({ active, over }: DragEndEvent) => {
-                    if (!over || active.id === over.id) return;
-                    moveFrame(state, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)), track.id);
-                  };
+                  const ids = track.frames.map((_, index) => clipId(track.id, index));
                   return (
                     <SortableRow key={track.id} id={rowIds[trackIndex]} disabled={renaming === track.id || tracks.length < 2}>
                       {(handle) => (
@@ -287,9 +393,15 @@ export function Timeline() {
                               </svg>
                             </button>
                           </div>
-                          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                            <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
-                              <div className="frame-track">
+                          <SortableContext items={ids} strategy={stayPut}>
+                            <RowDropZone
+                              trackId={track.id}
+                              hint={hint?.trackId === track.id ? hint : null}
+                              onFiles={(files) => {
+                                selectTrack(track.id);
+                                void add(files, track.id);
+                              }}
+                            >
                                 {track.frames.map((entry, i) => (
                                   <FrameClip
                                     key={ids[i]}
@@ -297,6 +409,7 @@ export function Timeline() {
                                     index={i}
                                     asset={project.frames[entry.id]}
                                     span={spans[i]}
+                                    gap={delaySpan(entry, fps)}
                                     selected={selectedTrack?.id === track.id && selected === i}
                                     labels={{ frames: t.frames(spans[i]), remove: t.deleteFrame, extend: t.extendFrame }}
                                     onSelect={() => { selectTrack(track.id); selectFrame(i); }}
@@ -318,15 +431,26 @@ export function Timeline() {
                                   <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                                 </button>
                                 {variant && !track.frames.length && track === baseTrack(tracks) && <span className="row-hint">{t.usesRegular}</span>}
-                              </div>
-                            </SortableContext>
-                          </DndContext>
+                            </RowDropZone>
+                          </SortableContext>
                         </>
                       )}
                     </SortableRow>
                   );
                 })}
               </SortableContext>
+              {/* The frame follows the pointer above every row; its own place
+                  stays, faded, until it lands. */}
+              <DragOverlay dropAnimation={null}>
+                {draggedEntry && (
+                  <div className="frame-clip ghost" style={{ "--span": frameSpan(draggedEntry, fps) } as CSSProperties}>
+                    <span className="clip-cells" />
+                    <span className="clip-thumb checker">
+                      {project.frames[draggedEntry.id] && <img src={project.frames[draggedEntry.id].url} alt="" draggable={false} />}
+                    </span>
+                  </div>
+                )}
+              </DragOverlay>
             </DndContext>
           </div>
         </div>
@@ -372,11 +496,94 @@ function SortableRow({
   );
 }
 
+/** A dragged frame may go anywhere, on any row: the others stay where they
+ *  are meanwhile. */
+const stayPut: SortingStrategy = () => null;
+
+const ZONE = "zone:";
+const clipId = (trackId: string, index: number) => `clip:${index}:${trackId}`;
+function clipOf(id: string): { trackId: string; index: number } | null {
+  const match = /^clip:(\d+):(.*)$/.exec(id);
+  return match ? { index: Number(match[1]), trackId: match[2] } : null;
+}
+
+/** Where a dragged frame would land on a row: a box `span` cells wide at
+ *  `cell`, or a line before `cell` between the pet's own frames. */
+interface DropHint {
+  trackId: string;
+  cell: number;
+  span: number;
+  line: boolean;
+}
+
+/** A row's frames: where a dragged frame or image files dropped on it go. */
+function RowDropZone({
+  trackId,
+  hint,
+  onFiles,
+  children,
+}: {
+  trackId: string;
+  hint: DropHint | null;
+  onFiles: (files: File[]) => void;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `${ZONE}${trackId}` });
+  const [filesOver, setFilesOver] = useState(false);
+  // Enters and leaves of the row and everything in it, counted: WebKit
+  // often leaves `relatedTarget` empty, so it cannot tell a move inside.
+  const depth = useRef(0);
+  return (
+    <div
+      ref={setNodeRef}
+      className={`frame-track${isOver || filesOver ? " drop-target" : ""}`}
+      // Over a frame, files replace it (see `FrameClip`), not join the row;
+      // that frame's own handlers stop the event before it gets here.
+      onDragOverCapture={(e) => hasFiles(e) && setFilesOver(!(e.target as Element).closest(".frame-clip"))}
+      onDropCapture={() => {
+        depth.current = 0;
+        setFilesOver(false);
+      }}
+      onDragEnterCapture={(e) => {
+        if (hasFiles(e)) depth.current += 1;
+      }}
+      onDragLeaveCapture={(e) => {
+        if (!hasFiles(e)) return;
+        depth.current = Math.max(0, depth.current - 1);
+        if (!depth.current) setFilesOver(false);
+      }}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setFilesOver(true);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setFilesOver(false);
+        onFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {children}
+      {hint && (
+        <span
+          className={`drop-hint${hint.line ? " line" : ""}`}
+          style={{ "--at": hint.cell, "--span": hint.span } as CSSProperties}
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  );
+}
+
 function FrameClip({
   id,
   index,
   asset,
   span,
+  gap,
   selected,
   labels,
   onSelect,
@@ -388,6 +595,8 @@ function FrameClip({
   index: number;
   asset?: FrameAsset;
   span: number;
+  /** Cells of nothing before it. */
+  gap: number;
   selected: boolean;
   labels: { frames: string; remove: string; extend: string };
   onSelect: () => void;
@@ -401,7 +610,7 @@ function FrameClip({
     <div
       ref={setNodeRef}
       className={`frame-clip${selected ? " selected" : ""}${isDragging ? " dragging" : ""}${dropping ? " replacing" : ""}`}
-      style={{ "--span": span, transform: CSS.Translate.toString(transform), transition } as CSSProperties}
+      style={{ "--span": span, "--gap": gap, transform: isDragging ? undefined : CSS.Translate.toString(transform), transition } as CSSProperties}
       onClick={onSelect}
       onDragOver={(e) => {
         if (!hasFiles(e)) return;

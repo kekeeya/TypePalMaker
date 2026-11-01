@@ -6,6 +6,7 @@ import { GeneralPage } from "./components/GeneralPage";
 import { Home } from "./components/Home";
 import { Inspector } from "./components/Inspector";
 import { NavIcon } from "./components/NavIcon";
+import { DialoguePage } from "./components/DialoguePage";
 import { Preview } from "./components/Preview";
 import { Timeline } from "./components/Timeline";
 import { Sparkle, TitleBar } from "./components/TitleBar";
@@ -27,7 +28,7 @@ interface DialogState {
   buttons: DialogButton[];
 }
 
-type View = "home" | "general" | "animation";
+type View = "home" | "general" | "animation" | "dialogue";
 const AUTOSAVE_DELAY_MS = 800;
 
 /** A shortcut as this system writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere. */
@@ -417,9 +418,15 @@ export function App() {
                   <b>{t.stateNames[state]}</b>
                 </button>
               ))}
+              <button className={view === "dialogue" ? "active" : ""} onClick={() => setView("dialogue")}>
+                <NavIcon kind="dialogue" />
+                <b>{t.dialogue}</b>
+              </button>
             </nav>
             {view === "general" ? (
               <GeneralPage onOpenState={openState} />
+            ) : view === "dialogue" ? (
+              <DialoguePage />
             ) : (
               <main className="animation-page">
                 <CanvasView key={selectedState} />

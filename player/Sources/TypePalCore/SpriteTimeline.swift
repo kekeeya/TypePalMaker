@@ -23,8 +23,13 @@ public struct SpriteTimeline {
         (entry.duration.map { $0 / 1000 }) ?? (1 / fps)
     }
 
-    /// For each track, the frame showing at `time` (nil once the track has
-    /// ended), and when the soonest of them ends.
+    /// Seconds the track shows nothing before the entry.
+    public func delay(of entry: FrameEntry) -> TimeInterval {
+        max(0, entry.delay ?? 0) / 1000
+    }
+
+    /// For each track, the frame showing at `time` (nil in a gap or once the
+    /// track has ended), and when the soonest of them changes.
     public func frames(at time: TimeInterval) -> (entries: [FrameEntry?], nextChange: TimeInterval) {
         var entries: [FrameEntry?] = []
         var next = length
@@ -32,6 +37,11 @@ public struct SpriteTimeline {
             var boundary: TimeInterval = 0
             var shown: FrameEntry?
             for entry in track.frames {
+                boundary += delay(of: entry)
+                if time < boundary - 0.000_001 {
+                    next = min(next, boundary)
+                    break
+                }
                 boundary += duration(of: entry)
                 if time < boundary - 0.000_001 {
                     shown = entry
@@ -44,8 +54,8 @@ public struct SpriteTimeline {
         return (entries, next)
     }
 
-    /// Nothing ever changes: one track holding one frame.
+    /// Nothing ever changes: one track holding one frame, from the start.
     public var isStill: Bool {
-        tracks.count == 1 && tracks[0].frames.count == 1
+        tracks.count == 1 && tracks[0].frames.count == 1 && delay(of: tracks[0].frames[0]) == 0
     }
 }

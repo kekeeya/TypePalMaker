@@ -76,12 +76,25 @@ fn renders_every_screen() {
         ("bubble-one", "1", false),
         ("bubble-123", "123", false),
     ] {
-        let l = super::bubble::layout(line);
+        let l = super::bubble::layout(line, &crate::core::manifest::SpeechStyle::default());
         assert!(l.lines.len() <= 2, "{name}: {} lines", l.lines.len());
         let mut c = Canvas::new(l.size.0, l.size.1, 2.0);
         super::bubble::paint(&mut c, &l, l.size.0 / 2.0, below);
         save(&c, name);
     }
+    // The maker's colours and sizes, moved right of the head: the tail leans
+    // back towards it.
+    let style = crate::core::manifest::SpeechStyle {
+        bubble_color: 0x353754,
+        text_color: 0xFFF3C4,
+        font_size: 18.0,
+        bubble_size: 1.4,
+        ..Default::default()
+    };
+    let l = super::bubble::layout("你好呀，今天也要加油！", &style);
+    let mut c = Canvas::new(l.size.0, l.size.1, 2.0);
+    super::bubble::paint(&mut c, &l, -40.0, false);
+    save(&c, "bubble-styled-leaning");
 }
 
 #[test]

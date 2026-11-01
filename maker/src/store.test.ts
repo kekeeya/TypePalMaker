@@ -77,6 +77,93 @@ describe("timeline tracks", () => {
   });
 });
 
+describe("frames placed with gaps", () => {
+  beforeEach(() => editor().loadProject(emptyProject("a")));
+
+  it("moves an effect's frame later, and what follows a deleted one stays put", () => {
+    editor().selectState("pet");
+    editor().addFrames("pet", [asset("base")]);
+    editor().setSpan("pet", 0, 8);
+    editor().addTrack("pet", "", "effect-heart", true);
+    editor().addFrames("pet", [asset("h1"), asset("h2")], "effect-heart");
+    editor().moveFrameTo("pet", "effect-heart", 1, "effect-heart", 5);
+    const row = (id: string) => editor().project.states.pet.tracks?.find((track) => track.id === id)?.frames;
+    expect(row("effect-heart")).toEqual([{ id: "h1" }, { id: "h2", delay: 500 }]);
+    expect(editor().selectedIndex).toBe(1);
+    // Onto a frame already there: it stays where it was.
+    editor().moveFrameTo("pet", "effect-heart", 1, "effect-heart", 0);
+    expect(row("effect-heart")).toEqual([{ id: "h1" }, { id: "h2", delay: 500 }]);
+    editor().removeFrame("pet", 0, "effect-heart");
+    expect(row("effect-heart")).toEqual([{ id: "h2", delay: 625 }]);
+  });
+
+  it("lengthens an effect's frame into the gap after it, the next one staying put", () => {
+    editor().selectState("pet");
+    editor().addFrames("pet", [asset("base")]);
+    editor().setSpan("pet", 0, 8);
+    editor().addTrack("pet", "", "effect-heart", true);
+    editor().addFrames("pet", [asset("h1"), asset("h2")], "effect-heart");
+    editor().moveFrameTo("pet", "effect-heart", 1, "effect-heart", 5);
+    const row = () => editor().project.states.pet.tracks?.find((track) => track.id === "effect-heart")?.frames;
+    editor().setSpan("pet", 0, 3, "effect-heart");
+    expect(row()).toEqual([{ id: "h1", duration: 375 }, { id: "h2", delay: 250 }]);
+    // Past the gap: the next frame is pushed along.
+    editor().setSpan("pet", 0, 7, "effect-heart");
+    expect(row()).toEqual([{ id: "h1", duration: 875 }, { id: "h2" }]);
+    // With the pet's row gone, the effect's row becomes the pet's own: no gaps.
+    editor().moveFrameTo("pet", "effect-heart", 1, "effect-heart", 9);
+    expect(row()?.[1].delay).toBeGreaterThan(0);
+    editor().removeTrack("pet", "main");
+    expect(row()).toEqual([{ id: "h1", duration: 875 }, { id: "h2" }]);
+    expect(editor().project.states.pet.frames).toEqual(row());
+  });
+
+  it("copies a frame and pastes it after the selected one, on any row", () => {
+    editor().selectState("pet");
+    editor().addFrames("pet", [asset("b1"), asset("b2")]);
+    editor().setPlacement("pet", 0, { scale: 2 });
+    editor().addTrack("pet", "", "effect-heart", true);
+    editor().addFrames("pet", [asset("h1")], "effect-heart");
+    const row = (id: string) => editor().project.states.pet.tracks?.find((track) => track.id === id)?.frames;
+    editor().selectTrack("main");
+    editor().selectFrame(0);
+    editor().copyFrame("pet");
+    // Same row: right after it, the rest moving along.
+    editor().pasteFrame("pet");
+    expect(row("main")?.map((f) => f.id)).toEqual(["b1", "b1", "b2"]);
+    expect(row("main")?.[1]).toEqual({ id: "b1", scale: 2 });
+    expect(editor().selectedIndex).toBe(1);
+    // An effect's row: in the cell after the selected frame.
+    editor().selectTrack("effect-heart");
+    editor().selectFrame(0);
+    editor().pasteFrame("pet");
+    expect(row("effect-heart")).toEqual([{ id: "h1" }, { id: "b1", scale: 2 }]);
+    editor().undo();
+    expect(row("effect-heart")).toEqual([{ id: "h1" }]);
+  });
+
+  it("moves frames between rows, as one step", () => {
+    editor().selectState("pet");
+    editor().addFrames("pet", [asset("b1"), asset("b2")]);
+    editor().addTrack("pet", "", "effect-heart", true);
+    editor().addFrames("pet", [asset("h1"), asset("h2")], "effect-heart");
+    const row = (id: string) => editor().project.states.pet.tracks?.find((track) => track.id === id)?.frames.map((f) => f.id);
+    // An effect's frame onto the pet's row, at its 2nd cell: between b1 and b2.
+    editor().moveFrameTo("pet", "effect-heart", 1, "main", 1);
+    expect(row("main")).toEqual(["b1", "h2", "b2"]);
+    expect(row("effect-heart")).toEqual(["h1"]);
+    expect(editor().selectedTrackId).toBe("main");
+    expect(editor().selectedIndex).toBe(1);
+    // The pet's frame onto the effect's row, at its 3rd cell, a gap before it.
+    editor().moveFrameTo("pet", "main", 0, "effect-heart", 2);
+    expect(editor().project.states.pet.tracks?.find((track) => track.id === "effect-heart")?.frames).toEqual([{ id: "h1" }, { id: "b1", delay: 125 }]);
+    expect(row("main")).toEqual(["h2", "b2"]);
+    editor().undo();
+    expect(row("main")).toEqual(["b1", "h2", "b2"]);
+    expect(row("effect-heart")).toEqual(["h1"]);
+  });
+});
+
 describe("rows on every reaction", () => {
   beforeEach(() => editor().loadProject(emptyProject("a")));
 
@@ -125,7 +212,7 @@ describe("random actions", () => {
     editor().addFrames("idle", [asset("x")]);
     editor().addVariant("idle", "小动作 1");
     const id = editor().selectedVariantId!;
-    expect(editor().project.states.idle.variants?.[0]).toMatchObject({ name: "小动作 1", every: [300, 600], lines: [] });
+    expect(editor().project.states.idle.variants?.[0]).toMatchObject({ name: "小动作 1", every: [60, 180], lines: [] });
     editor().addFrames("idle", [asset("y")]);
     editor().addTrack("idle", "", "sleep-effects", true);
     expect(editor().project.states.idle.variants?.[0].tracks.map((t) => [t.id, t.frames.map((f) => f.id)])).toEqual([
@@ -160,5 +247,19 @@ describe("random actions", () => {
     editor().addVariant("idle", "小动作 1");
     editor().undo();
     expect(editor().selectedVariantId).toBeNull();
+  });
+});
+
+describe("the speech bubble's look", () => {
+  beforeEach(() => editor().loadProject(emptyProject("a")));
+
+  it("keeps offsets within the pet's reach, and a change to the same is no step", () => {
+    const steps = () => editor().past.length;
+    editor().setSpeech({ offsetX: 1e6, offsetY: -1e6 });
+    const reach = 2 * editor().project.canvas.height;
+    expect(editor().project.speech).toMatchObject({ offsetX: reach, offsetY: -reach });
+    const before = steps();
+    editor().setSpeech({ offsetX: reach });
+    expect(steps()).toBe(before);
   });
 });

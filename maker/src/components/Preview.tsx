@@ -3,10 +3,11 @@ import { useT } from "../i18n/useT";
 import { PetBehavior, PetSpeech, playedAs, StrokeRecognizer, StrokeTuning } from "../model/behavior";
 import { fitRect } from "../model/placement";
 import { entryAtCell } from "../model/timeline";
-import { PET_STATES, timelineTracks, variantRows, type FrameAsset, type PetState, type Project } from "../model/types";
+import { DEFAULT_SPEECH, PET_STATES, timelineTracks, variantRows, type FrameAsset, type PetState, type Project } from "../model/types";
 import { playable } from "../model/validate";
 import { useEditor } from "../store";
 import { FrameStack, useTimelinePlayer } from "./Sprite";
+import { backdropFor, SpeechBubble, useArtworkTop } from "./SpeechBubble";
 
 const now = () => performance.now() / 1000;
 
@@ -145,6 +146,9 @@ export function Preview({ project }: { project: Project }) {
       })
     : [];
   const box = { width: (project.canvas.width * 72) / project.canvas.dpi, height: (project.canvas.height * 72) / project.canvas.dpi };
+  // The line over the head of the frames showing, as the desktop puts it.
+  const shownEntries = spec ? timelineTracks(spec).flatMap((track) => entryAtCell(track, project.fps, cell)?.entry ?? []) : [];
+  const top = useArtworkTop(project.frames, shownEntries, project.canvas);
   const petRef = useRef<HTMLDivElement>(null);
 
   /** On the artwork itself, not the transparent space around it. */
@@ -168,6 +172,7 @@ export function Preview({ project }: { project: Project }) {
         <p className="note">{t.previewHelp}</p>
         <div
           className="stage"
+          style={{ background: backdropFor((project.speech ?? DEFAULT_SPEECH).bubbleColor) }}
           onMouseDown={(e) => {
             const round = behavior.round;
             if (onPet(e)) {
@@ -204,7 +209,17 @@ export function Preview({ project }: { project: Project }) {
           }}
         >
           <div ref={petRef} className="pet-box" style={{ width: box.width, height: box.height }}>
-            {line && <div key={line.key} className="line-bubble preview-bubble"><b>{line.text}</b></div>}
+            {line && (
+              <SpeechBubble
+                key={line.key}
+                line={line.text}
+                style={project.speech}
+                box={{ left: 0, top: 0, ...box }}
+                top={top}
+                canvas={project.canvas}
+                pt={1}
+              />
+            )}
             {PET_STATES.map((s) => {
               const own = playable(project, s);
               if (!own) return null;

@@ -18,6 +18,11 @@ import {
   PET_STATES,
   PLAYS_ONCE,
   spanDuration,
+  delaySpan,
+  spanDelay,
+  DEFAULT_SPEECH,
+  SPEECH_LIMITS,
+  type SpeechStyle,
   type Canvas,
   type FrameAsset,
   type FrameEntry,
@@ -48,6 +53,8 @@ interface ManifestJSON {
   canvas?: Canvas;
   /** Editor only: how `icon.png` is placed on the icon. */
   iconStyle?: IconStyle;
+  /** The speech bubble; offsets in shares of the pet's height. */
+  speech?: SpeechStyle;
   frames: Record<string, { file: string; name?: string }>;
   states: Partial<Record<PetState, {
     enabled: boolean;
@@ -75,6 +82,7 @@ export function encodeProject(project: Project): Uint8Array {
     display: { height: displayHeight(project.canvas) },
     canvas: project.canvas,
     iconStyle: project.iconStyle,
+    ...(project.speech ? { speech: speechOut(project.speech, project.canvas) } : {}),
     frames: {},
     states: {},
   };
@@ -138,7 +146,7 @@ function readLines(lines: unknown): string[] {
 /** A bare id when there is nothing else to say, as the runtime allows. */
 function compactEntry(entry: FrameEntry): ManifestFrame {
   const out: Record<string, unknown> = { id: entry.id };
-  for (const key of ["duration", "scale", "offsetX", "offsetY", "rotation"] as const) {
+  for (const key of ["duration", "delay", "scale", "offsetX", "offsetY", "rotation"] as const) {
     if (entry[key] !== undefined) out[key] = entry[key];
   }
   return Object.keys(out).length === 1 ? entry.id : (out as ManifestFrame);
@@ -179,7 +187,11 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
       (list ?? [])
         .map((f): FrameEntry => (typeof f === "string" ? { id: f } : { ...f }))
         .filter((f) => frames[f.id])
-        .map((f) => ({ ...f, duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps) }));
+        .map((f) => ({
+          ...f,
+          duration: spanDuration(frameSpan({ id: f.id, duration: f.duration ?? ownStep }, fps), fps),
+          delay: spanDelay(delaySpan(f, fps), fps),
+        }));
     const readTrack = (track: ManifestTrack): FrameTrack => ({ id: track.id, name: track.name ?? "", frames: readEntries(track.frames) });
     states[state] = {
       enabled: spec.enabled,
@@ -213,18 +225,46 @@ export async function decodeProject(bytes: Uint8Array): Promise<Project> {
   }
 
   const iconBytes = files["icon.png"];
+  const canvas = manifest.canvas ?? legacyCanvas(manifest.display?.height, frames);
   return {
     name: manifest.name ?? "",
     // The id names the app's bundle and the Maker's storage, so only the
     // runtime's own pattern will do; anything else gets a fresh one.
     id: typeof manifest.id === "string" && /^[a-z0-9-]{1,40}$/.test(manifest.id) ? manifest.id : newId(),
     fps,
-    canvas: manifest.canvas ?? legacyCanvas(manifest.display?.height, frames),
+    canvas,
     frames,
     frameOrder,
     states,
     icon: iconBytes ? await assetFromBytes("icon", "icon", iconBytes) : undefined,
     iconStyle: { ...DEFAULT_ICON_STYLE, ...manifest.iconStyle },
+    ...(manifest.speech ? { speech: speechIn(manifest.speech, canvas) } : {}),
+  };
+}
+
+/** The bubble as the pet reads it: offsets as shares of its height, which
+ *  is the canvas's. */
+function speechOut(speech: SpeechStyle, canvas: Canvas): SpeechStyle {
+  const share = (px: number) => Math.round((px / canvas.height) * 10000) / 10000;
+  return { ...speech, offsetX: share(speech.offsetX), offsetY: share(speech.offsetY) };
+}
+
+/** A saved bubble, anything unusable left as designed. */
+function speechIn(raw: unknown, canvas: Canvas): SpeechStyle {
+  const s = (raw ?? {}) as Record<string, unknown>;
+  const number = (key: string, min: number, max: number, fallback: number) =>
+    // Not `clamp`, which rounds: these are shares and sizes.
+    typeof s[key] === "number" && Number.isFinite(s[key]) ? Math.min(max, Math.max(min, s[key] as number)) : fallback;
+  const color = (key: string, fallback: string) =>
+    typeof s[key] === "string" && /^#[0-9a-f]{6}$/i.test(s[key] as string) ? (s[key] as string).toLowerCase() : fallback;
+  const reach = SPEECH_LIMITS.offset;
+  return {
+    offsetX: Math.round(number("offsetX", -reach, reach, 0) * canvas.height),
+    offsetY: Math.round(number("offsetY", -reach, reach, 0) * canvas.height),
+    bubbleColor: color("bubbleColor", DEFAULT_SPEECH.bubbleColor),
+    textColor: color("textColor", DEFAULT_SPEECH.textColor),
+    fontSize: number("fontSize", SPEECH_LIMITS.fontSize.min, SPEECH_LIMITS.fontSize.max, DEFAULT_SPEECH.fontSize),
+    bubbleSize: number("bubbleSize", SPEECH_LIMITS.bubbleSize.min, SPEECH_LIMITS.bubbleSize.max, DEFAULT_SPEECH.bubbleSize),
   };
 }
 

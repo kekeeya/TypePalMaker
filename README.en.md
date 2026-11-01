@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/readme/typepal-idle.gif" alt="TypePal, the built-in template pet" width="200">
+  <img src=".github/readme/ren-idle-coffee.gif" alt="Ren, the built-in template pet" width="200">
 </p>
 
 <p align="center">
@@ -34,10 +34,12 @@
   <tr><th nowrap>Feature</th><th>What you get</th></tr>
   <tr><td nowrap>6 reactions</td><td>Idle, Typing, Mouse Click, Tap Pet, Petting and Sleep (it nods off after a while without input and wakes when you come back). Animate the ones you want and leave the rest off</td></tr>
   <tr><td nowrap>9 effects</td><td>Zzz, Heart, Sweat, Angry, Sad, Puzzled, Surprised, Music and Sparkle, layered over any reaction</td></tr>
-  <tr><td nowrap>Animation editing</td><td>Set your own frame rate, then adjust each frame's length and order on the timeline, plus its position, scale and rotation. Undo / redo and a live animation preview included</td></tr>
+  <tr><td nowrap>Animation editing</td><td>Set your own frame rate and stack several tracks, then adjust each frame's length and order, plus its position, scale and rotation. Drag frames between tracks, place an effect at any moment, copy and paste frames. Undo / redo and a live animation preview included</td></tr>
+  <tr><td nowrap>Random actions</td><td>Give any reaction a few random actions: Idle and Sleep slip one in now and then at the interval you set, the others play one instead by chance</td></tr>
+  <tr><td nowrap>Speech bubbles</td><td>Give reactions and actions lines to say, shown in a bubble over the pet's head. Set the bubble's position, colors and text size on the Speech page</td></tr>
   <tr><td nowrap>Live pet preview</td><td>Try your pet right inside the Maker and fine-tune it as you go</td></tr>
   <tr><td nowrap>Custom app icon</td><td>Uses the Idle picture by default, or upload any image you like</td></tr>
-  <tr><td nowrap>Built-in template</td><td>Start from the ready-made template pet. Projects autosave, and you can export <code>.typepalproj</code> backups anytime</td></tr>
+  <tr><td nowrap>Built-in template</td><td>Start from Ren, the ready-made template pet. Projects autosave, and you can export <code>.typepalproj</code> backups anytime</td></tr>
   <tr><td nowrap>Pet settings</td><td>Launch at Login, size, Always on Top, Lock Position, Click-Through and more</td></tr>
   <tr><td nowrap>Privacy-friendly</td><td>No system permissions (no Accessibility, no Input Monitoring), no internet, and it never records what you type</td></tr>
 </table>

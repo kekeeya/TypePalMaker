@@ -243,7 +243,9 @@ final class PetController {
         guard !pool.isEmpty, panel.isVisible, !isOccluded, let line = speech.say(from: pool) else { return }
         let box = store.boxSize
         let top = animator.currentFrames.compactMap(\.artworkTop).max() ?? box.height
-        bubble.show(line, for: PetSpeech.duration(of: line), pointingAt: CGPoint(x: box.width / 2, y: top - 4))
+        // The maker's placement: shares of the pet's height, y down.
+        let offset = CGSize(width: manifest.speech.offsetX * box.height, height: -manifest.speech.offsetY * box.height)
+        bubble.show(line, style: manifest.speech, for: PetSpeech.duration(of: line), pointingAt: CGPoint(x: box.width / 2, y: top - 4), offset: offset)
     }
 
     /// A click or a key while its reaction still plays starts no new round,

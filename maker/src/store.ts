@@ -1,10 +1,17 @@
 import { create } from "zustand";
 import { defaultLang, rememberLang, type Lang } from "./i18n/strings";
 import type { ImportedFrame } from "./model/imageImport";
+import { dropEntry, entryStartCell, trackCells, withoutEntry } from "./model/timeline";
 import {
   emptyProject,
   allStateFrames,
   baseTrack,
+  delaySpan,
+  frameSpan,
+  spanDelay,
+  DEFAULT_SPEECH,
+  SPEECH_LIMITS,
+  type SpeechStyle,
   newId,
   newVariant,
   PET_STATES,
@@ -34,6 +41,9 @@ interface EditorState {
   selectedState: PetState;
   /** Index into the selected state's frames, or null when nothing is picked. */
   selectedIndex: number | null;
+  /** The frame last copied, with its picture, to paste anywhere (another
+   *  row, reaction or project). Not part of the project or its history. */
+  copiedFrame: { entry: FrameEntry; asset: FrameAsset } | null;
   /** The selected row. Null means the pet's own row. */
   selectedTrackId: string | null;
   /** The random action being edited; null is the reaction's usual animation. */
@@ -79,12 +89,22 @@ interface EditorState {
   /** An empty name puts back the row's default one. */
   renameTrack(state: PetState, trackId: string, name: string): void;
 
+  /** Changes how the speech bubble looks or sits; a run of the same kind
+   *  of change (a drag, a slider) is one undo step. */
+  setSpeech(patch: Partial<SpeechStyle>, mergeKey?: string): void;
+  /** Copies the selected frame: its picture, length and placement. */
+  copyFrame(state: PetState): void;
+  /** Puts the copied frame right after the selected one, in the selected
+   *  row (see `dropEntry`), or at the row's end when none is selected. */
+  pasteFrame(state: PetState): void;
   /** Adds uploaded pictures to the end of a state. */
   addFrames(state: PetState, frames: ImportedFrame[], trackId?: string | null): void;
   /** Swaps the picture of one frame, keeping its length and placement. */
   replaceFrame(state: PetState, index: number, asset: FrameAsset, trackId?: string | null): void;
   removeFrame(state: PetState, index: number, trackId?: string | null): void;
-  moveFrame(state: PetState, from: number, to: number, trackId?: string | null): void;
+  /** Moves a frame to `cell` of a row, its own or another (see
+   *  `dropEntry`). */
+  moveFrameTo(state: PetState, fromTrackId: string, index: number, toTrackId: string, cell: number): void;
   /** How many timeline frames the picture holds. */
   setSpan(state: PetState, index: number, span: number, trackId?: string | null): void;
   setPlacement(state: PetState, index: number, placement: Placement, trackId?: string | null): void;
@@ -101,7 +121,13 @@ export function rowsIn(spec: StateSpec, variantId: string | null): FrameTrack[] 
 
 /** A reaction with a tab's rows replaced; `frames` follows the pet's own
  *  row of the usual animation. */
-function putRows(spec: StateSpec, variantId: string | null, tracks: FrameTrack[]): StateSpec {
+function putRows(spec: StateSpec, variantId: string | null, rows: FrameTrack[]): StateSpec {
+  // The pet's own row plays frame after frame: a row that becomes it (moved
+  // last, say) loses any gaps it had.
+  const base = baseTrack(rows);
+  const tracks = base?.frames.some((f) => f.delay)
+    ? rows.map((track) => (track === base ? { ...track, frames: track.frames.map(({ delay: _, ...f }) => f) } : track))
+    : rows;
   if (variantId) return { ...spec, variants: (spec.variants ?? []).map((v) => (v.id === variantId ? { ...v, tracks } : v)) };
   return { ...spec, tracks, frames: baseTrack(tracks)?.frames ?? [] };
 }
@@ -126,8 +152,11 @@ function assetsOf(project: Project): FrameAsset[] {
  * project nor any undo or redo step shows it.
  */
 const live = new Set<FrameAsset>();
+/** The copied frame's picture: kept for a paste, whatever the project. */
+let copiedAsset: FrameAsset | null = null;
 function collect(projects: Project[]) {
   const reachable = new Set(projects.flatMap(assetsOf));
+  if (copiedAsset) reachable.add(copiedAsset);
   for (const asset of live) {
     if (reachable.has(asset)) continue;
     if (asset.url) URL.revokeObjectURL(asset.url);
@@ -232,6 +261,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedTrackId: null,
     selectedVariantId: null,
     previewOpen: false,
+    copiedFrame: null,
     notice: null,
     lang: defaultLang(),
     revision: 0,
@@ -369,6 +399,59 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
     },
 
+    setSpeech(patch, mergeKey) {
+      edit((p) => {
+        const now = { ...DEFAULT_SPEECH, ...p.speech };
+        const next = { ...now, ...patch };
+        // As far as the pet reads it: two pet heights each way.
+        const reach = SPEECH_LIMITS.offset * p.canvas.height;
+        next.offsetX = Math.min(reach, Math.max(-reach, next.offsetX));
+        next.offsetY = Math.min(reach, Math.max(-reach, next.offsetY));
+        const same = (Object.keys(next) as (keyof SpeechStyle)[]).every((k) => next[k] === now[k]);
+        return same ? p : { ...p, speech: next };
+      }, mergeKey && `speech:${mergeKey}`);
+    },
+
+    copyFrame(state) {
+      const { project, selectedTrackId, selectedIndex } = get();
+      const entry = selectedIndex === null ? undefined : rowOf(rowsIn(project.states[state], tabOf(state)) ?? [], selectedTrackId)?.frames[selectedIndex];
+      const asset = entry && project.frames[entry.id];
+      if (!entry || !asset) return;
+      const { delay: _, ...plain } = entry;
+      copiedAsset = asset;
+      live.add(asset);
+      set({ copiedFrame: { entry: plain, asset } });
+    },
+
+    pasteFrame(state) {
+      const { copiedFrame, selectedTrackId, selectedIndex } = get();
+      if (!copiedFrame) return;
+      const { entry, asset } = copiedFrame;
+      let landed = null as { trackId: string; index: number } | null;
+      editRows(
+        state,
+        (tracks, p) => {
+          const row = rowOf(tracks, selectedTrackId);
+          if (!row) return tracks;
+          const after = row.id === selectedTrackId && selectedIndex !== null && row.frames[selectedIndex] ? selectedIndex : null;
+          const cell = after === null ? trackCells(row, p.fps) : entryStartCell(row, p.fps, after) + frameSpan(row.frames[after], p.fps);
+          const dropped = dropEntry(row.frames, entry, cell, row !== baseTrack(tracks), true, p.fps)!;
+          landed = { trackId: row.id, index: dropped.index };
+          return tracks.map((track) => (track === row ? { ...track, frames: dropped.frames } : track));
+        },
+        {
+          // The picture may come from another project: it joins this one.
+          extra: (p) => ({
+            ...p,
+            frames: { ...p.frames, [asset.id]: p.frames[asset.id] ?? asset },
+            frameOrder: p.frameOrder.includes(asset.id) ? p.frameOrder : [...p.frameOrder, asset.id],
+            states: { ...p.states, [state]: { ...p.states[state], enabled: true } },
+          }),
+        },
+      );
+      if (landed) set({ selectedTrackId: landed.trackId, selectedIndex: landed.index });
+    },
+
     addFrames(state, imported, trackId = get().selectedTrackId) {
       if (!imported.length) return;
       const tracks = rowsIn(get().project.states[state], tabOf(state)) ?? [];
@@ -416,26 +499,47 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     removeFrame(state, index, trackId = get().selectedTrackId) {
-      editFrames(state, trackId, (frames) => frames.filter((_, i) => i !== index));
+      const rows = rowsIn(get().project.states[state], tabOf(state)) ?? [];
+      const keepPlace = rowOf(rows, trackId) !== baseTrack(rows);
+      editFrames(state, trackId, (frames, p) => withoutEntry(frames, index, keepPlace, p.fps));
       const left = (rowOf(rowsIn(get().project.states[state], tabOf(state)) ?? [], trackId)?.frames ?? []).length;
       set({ selectedIndex: left ? Math.min(index, left - 1) : null });
     },
 
-    moveFrame(state, from, to, trackId = get().selectedTrackId) {
-      editFrames(state, trackId, (frames) => {
-        const next = [...frames];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        return next;
+    moveFrameTo(state, fromTrackId, index, toTrackId, cell) {
+      let landed: number | null = null;
+      editRows(state, (tracks, p) => {
+        const from = rowOf(tracks, fromTrackId);
+        const to = rowOf(tracks, toTrackId);
+        if (!from || !to || from.id !== fromTrackId || to.id !== toTrackId || !from.frames[index]) return tracks;
+        const base = baseTrack(tracks);
+        const left = withoutEntry(from.frames, index, from !== base, p.fps);
+        const dropped = dropEntry(to === from ? left : to.frames, from.frames[index], cell, to !== base, to !== from, p.fps);
+        if (!dropped) return tracks;
+        landed = dropped.index;
+        return tracks.map((track) => (track === to ? { ...track, frames: dropped.frames } : track === from ? { ...track, frames: left } : track));
       });
-      set({ selectedIndex: to });
+      if (landed !== null) set({ selectedTrackId: toTrackId, selectedIndex: landed });
     },
 
     setSpan(state, index, span, trackId = get().selectedTrackId) {
+      // On an effect's row the next frame keeps its place while there is a
+      // gap to take from or give back; on the pet's own row it follows.
+      const rows = rowsIn(get().project.states[state], tabOf(state)) ?? [];
+      const keepPlace = rowOf(rows, trackId) !== baseTrack(rows);
       editFrames(
         state,
         trackId,
-        (frames, p) => frames.map((f, i) => (i === index ? { ...f, duration: spanDuration(span, p.fps) } : f)),
+        (frames, p) => {
+          const grown = span - frameSpan(frames[index], p.fps);
+          return frames.map((f, i) => {
+            if (i === index) return { ...f, duration: spanDuration(span, p.fps) };
+            if (i !== index + 1 || !keepPlace) return f;
+            const { delay: _, ...rest } = f;
+            const delay = spanDelay(Math.max(0, delaySpan(f, p.fps) - grown), p.fps);
+            return delay === undefined ? rest : { ...rest, delay };
+          });
+        },
         `span:${state}:${tabOf(state) ?? ""}:${trackId ?? "main"}:${index}`,
       );
     },

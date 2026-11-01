@@ -2,9 +2,10 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../i18n/useT";
 import { useEditor } from "../store";
 import { entryAtCell, entryStartCell } from "../model/timeline";
-import { baseTrack, timelineTracks, variantRows } from "../model/types";
+import { baseTrack, displayHeight, timelineTracks, variantRows, type FrameEntry } from "../model/types";
 import { FrameStack, useTimelinePlayer } from "./Sprite";
 import { PetSpeech } from "../model/behavior";
+import { SpeechBubble, useArtworkTop } from "./SpeechBubble";
 
 /** The canvas's longer side on screen, at most; less when the window is
  *  small. */
@@ -15,6 +16,8 @@ const PAPER_CHROME = { x: 120, y: 150 };
  *  much larger, as far as the panel allows (the paper may then pass between
  *  the toolbar's ends). */
 const PREVIEW_SCALE = 1.5;
+/** The paper's padding round the canvas (`.canvas-paper`). */
+const PAPER_PADDING = 20;
 /** The least room around the paper: the viewport's padding and the paper's. */
 const PAPER_EDGE = { x: 48 + 40, y: 24 + 40 };
 /** The sizes last measured, to start from when the view mounts again. */
@@ -95,6 +98,9 @@ export function CanvasView() {
   const tracks = timelineTracks(spec);
   const selectedTrack = tracks.find((track) => track.id === trackId) ?? baseTrack(tracks);
   const selectedCell = playing ? playCell : index === null || !selectedTrack ? 0 : entryStartCell(selectedTrack, project.fps, index);
+  // The tab's line over the head of the frames showing, as the desktop puts it.
+  const shownEntries = tracks.map((track) => entryAtCell(track, project.fps, selectedCell)?.entry).filter((entry): entry is FrameEntry => !!entry);
+  const top = useArtworkTop(project.frames, shownEntries, canvas);
 
   return (
     <section className="canvas soft-card" ref={section}>
@@ -131,10 +137,16 @@ export function CanvasView() {
             ))}
           </div>
           {line && (
-            <div className="line-bubble">
-              <b>{line}</b>
-              <small>{t.linePreview}</small>
-            </div>
+            <SpeechBubble
+              key={lineKey}
+              line={line}
+              style={project.speech}
+              box={{ left: PAPER_PADDING, top: PAPER_PADDING, width: canvas.width * ratio, height: canvas.height * ratio }}
+              top={top}
+              canvas={canvas}
+              pt={(canvas.height * ratio) / displayHeight(canvas)}
+              minTop={0}
+            />
           )}
         </div>
       </div>

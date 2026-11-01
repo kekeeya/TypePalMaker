@@ -24,7 +24,7 @@ export const POLICY: Record<Lang, PolicySection[]> = {
     {
       heading: "二、TypePal 的系统权限与输入感知",
       body: `TypePal 不申请任何系统权限（包括辅助功能、输入监控、屏幕录制等）；在 Windows 上也不需要管理员权限，不安装任何键盘或鼠标钩子。为了对你的操作做出反应，它只使用 macOS / Windows 向所有应用公开的以下信息：
-1. 打字反应：在 Mac 上只读取系统提供的「距离上一次按键过去了多久」；在 Windows 上只读取「最近一次操作发生的时间」，并排除鼠标的操作。都只用来判断你是否正在打字，无法得知你按了哪个键、输入了什么内容，也不会记录。
+1. 打字反应：在 Mac 上只读取系统提供的「距离上一次按键过去了多久」；在 Windows 上只读取「最近一次操作发生的时间」，并排除鼠标的操作。都只用来判断你是否正在打字，无法得知你按了哪个键、输入了什么内容，也不会记录。气泡里出现的台词是制作桌宠时预先写好的，和你输入的内容无关。
 2. 鼠标点击反应：只在你按下鼠标按键时得知「发生了一次点击」（在 Windows 上还会判断是否点在 TypePal 自己身上），不记录点击的位置和所在的应用。
 3. 点击与抚摸：鼠标移动时读取光标当前的位置，只用来判断光标是否落在 TypePal 身上（以区分你是点到了它还是在抚摸它），不记录光标的移动轨迹。
 4. 睡眠：只记下你最近一次使用键盘或鼠标（包括移动鼠标）的时间，一段时间没有操作就进入睡眠，一有操作就醒来。不记录你做了什么。
@@ -37,7 +37,7 @@ export const POLICY: Record<Lang, PolicySection[]> = {
     },
     {
       heading: "四、系统权限",
-      body: "本地版只读写你自己选择的文件和文件夹，生成的桌宠保存在你选择的位置。网页版不需要任何权限，生成的桌宠会直接下载到你的电脑。",
+      body: "本地版只读写你自己选择的文件和文件夹（包括你拖进窗口的图片），生成的桌宠保存在你选择的位置。网页版不需要任何权限，生成的桌宠会直接下载到你的电脑。时间轴上复制、粘贴帧只在 TypePalMaker 内部进行，不读取也不写入系统剪贴板。",
     },
     { body: "本政策可能随功能更新而调整，如有重大变更会在项目主页说明。" },
   ],
@@ -51,7 +51,7 @@ export const POLICY: Record<Lang, PolicySection[]> = {
     {
       heading: "2. TypePal's permissions and input awareness",
       body: `TypePal asks for no system permissions (no Accessibility, Input Monitoring or Screen Recording); on Windows it also needs no administrator rights and installs no keyboard or mouse hooks. To react to what you do, it uses only the following information, which macOS and Windows make available to every app:
-1. Typing: on a Mac it reads only "how long since the last key press", provided by the system; on Windows only "when you last used the computer", leaving out mouse activity. Either way it only tells whether you are typing: it cannot see which keys you press or what you type, and records nothing.
+1. Typing: on a Mac it reads only "how long since the last key press", provided by the system; on Windows only "when you last used the computer", leaving out mouse activity. Either way it only tells whether you are typing: it cannot see which keys you press or what you type, and records nothing. The lines in its speech bubble were written in advance by whoever made the pet; they have nothing to do with what you type.
 2. Mouse clicks: it learns only that "a click happened" when you press a mouse button (on Windows, also whether it was on TypePal itself). It does not record where you clicked or in which app.
 3. Clicking and petting: when the mouse moves, it reads where the pointer is, only to tell whether it is over TypePal (so it knows whether you clicked it or are petting it). It does not record where the pointer has been.
 4. Sleep: it notes only when you last used the keyboard or mouse (moving the mouse included), to fall asleep after a while without input and wake when there is some. It does not record what you did.
@@ -64,7 +64,7 @@ export const POLICY: Record<Lang, PolicySection[]> = {
     },
     {
       heading: "4. System permissions",
-      body: "The desktop version only reads and writes the files and folders you choose; generated pets are saved where you choose. The web version needs no permissions; generated pets are downloaded straight to your computer.",
+      body: "The desktop version only reads and writes the files and folders you choose (images you drag into its window included); generated pets are saved where you choose. The web version needs no permissions; generated pets are downloaded straight to your computer. Copying and pasting frames on the timeline happens inside TypePalMaker only; it neither reads nor writes the system clipboard.",
     },
     { body: "This policy may change as features are updated. Significant changes will be announced on the project page." },
   ],

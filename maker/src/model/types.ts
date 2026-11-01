@@ -8,6 +8,10 @@ export interface FrameEntry {
   /** Milliseconds; undefined means one frame (1 / fps). The editor always
    *  keeps it a whole number of frames. */
   duration?: number;
+  /** Milliseconds its row shows nothing before it, a whole number of
+   *  frames: an effect that comes in later than the pet. Undefined means
+   *  none. */
+  delay?: number;
   /** Placement on the canvas, made in the editor: a scale of the image as
    *  fitted, an offset in canvas pixels, and a rotation in degrees. Baked
    *  into the picture when the app is generated. */
@@ -51,7 +55,7 @@ export interface StateVariant {
 /** The three ready-made frequencies of a random action. */
 export const FREQUENCIES = {
   /** Seconds between two plays of a looping reaction's action. */
-  every: { rare: [2700, 3600], sometimes: [300, 600], often: [60, 180] } as Record<Frequency, [number, number]>,
+  every: { rare: [300, 600], sometimes: [60, 180], often: [5, 15] } as Record<Frequency, [number, number]>,
   /** Chance a triggered reaction plays the action instead. */
   chance: { rare: 0.1, sometimes: 0.2, often: 0.4 } as Record<Frequency, number>,
 };
@@ -148,7 +152,38 @@ export interface Project {
   /** The picture uploaded for the app icon; the first idle frame otherwise. */
   icon?: FrameAsset;
   iconStyle: IconStyle;
+  /** How every line the pet says looks; as designed when absent. */
+  speech?: SpeechStyle;
 }
+
+/** The speech bubble, for every line the pet says: where it sits against its
+ *  usual place centred over the head (canvas pixels, y down), its colours,
+ *  its text size in points, and how roomy it is (1 = as designed). */
+export interface SpeechStyle {
+  offsetX: number;
+  offsetY: number;
+  bubbleColor: string;
+  textColor: string;
+  fontSize: number;
+  bubbleSize: number;
+}
+
+export const DEFAULT_SPEECH: SpeechStyle = {
+  offsetX: 0,
+  offsetY: 0,
+  bubbleColor: "#fffdf7",
+  textColor: "#353754",
+  fontSize: 13,
+  bubbleSize: 1,
+};
+
+/** The ranges the pet accepts (`schema/manifest.schema.json`). */
+export const SPEECH_LIMITS = {
+  fontSize: { min: 10, max: 24 },
+  bubbleSize: { min: 0.6, max: 2 },
+  /** Offsets, in shares of the pet's height. */
+  offset: 2,
+};
 
 export const DEFAULT_CANVAS: Canvas = { width: 500, height: 500, dpi: 144 };
 export const DEFAULT_FPS = 8;
@@ -203,7 +238,7 @@ export function emptyStates(fps: number): Record<PetState, StateSpec> {
           fps,
           loop: true,
           frames: [],
-          sleepAfterMinutes: 15,
+          sleepAfterMinutes: 10,
           // One empty row, as every reaction starts; Zzz is a built-in
           // effect added over it.
           tracks: [{ id: "sleep-base", name: "", frames: [] }],
@@ -229,6 +264,16 @@ export function emptyProject(name: string, canvas: Canvas = DEFAULT_CANVAS, fps 
 /** How many timeline frames an entry covers. */
 export function frameSpan(entry: FrameEntry, fps: number): number {
   return entry.duration === undefined ? 1 : Math.max(1, Math.round((entry.duration * fps) / 1000));
+}
+
+/** How many timeline frames of nothing come before an entry. */
+export function delaySpan(entry: FrameEntry, fps: number): number {
+  return entry.delay ? Math.max(0, Math.round((entry.delay * fps) / 1000)) : 0;
+}
+
+/** The delay to store for `span` frames of nothing. */
+export function spanDelay(span: number, fps: number): number | undefined {
+  return span >= 1 ? (Math.round(span) * 1000) / fps : undefined;
 }
 
 /** The duration to store for an entry covering `span` frames. */

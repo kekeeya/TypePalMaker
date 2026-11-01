@@ -49,7 +49,11 @@ export async function bakeProject(project: Project): Promise<Project> {
             frames[id] = await assetFromBytes(id, source.name, await toPng(surface));
           }
         }
-        entries.push(entry.duration === undefined ? { id } : { id, duration: entry.duration });
+        entries.push({
+          id,
+          ...(entry.duration === undefined ? {} : { duration: entry.duration }),
+          ...(entry.delay === undefined ? {} : { delay: entry.delay }),
+        });
       }
       return entries;
     };

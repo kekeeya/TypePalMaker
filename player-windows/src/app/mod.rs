@@ -778,9 +778,10 @@ impl App {
             return;
         }
         let Some(line) = self.speech.say(pool) else { return };
+        let style = self.manifest.speech;
         match self.bubble.as_mut() {
-            Some(b) => b.set_line(&line, self.scale),
-            None => self.bubble = bubble::Bubble::new(self.pet, &line, self.scale),
+            Some(b) => b.set_line(&line, &style, self.scale),
+            None => self.bubble = bubble::Bubble::new(self.pet, &line, &style, self.scale),
         }
         self.place_bubble();
         let ms = (PetSpeech::duration(&line) * 1000.0) as u32;
@@ -812,8 +813,11 @@ impl App {
         let (w, h) = self.size;
         let top = self.current.iter().filter_map(|f| f.artwork_top()).min().unwrap_or(0);
         let tip = (self.pos.0 + w / 2, self.pos.1 + top + (4.0 * self.scale) as i32);
+        // The maker's placement: shares of the pet's height, y down.
+        let speech = self.manifest.speech;
+        let offset = ((speech.offset_x * h as f64).round() as i32, (speech.offset_y * h as f64).round() as i32);
         if let Some(b) = self.bubble.as_mut() {
-            b.place(tip, self.pos.1 + h);
+            b.place(tip, offset, self.pos.1 + h);
         }
     }
 

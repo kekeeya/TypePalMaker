@@ -43,12 +43,16 @@ impl PetState {
     }
 }
 
-/// One frame in a state's sequence: which image, and for how long.
+/// One frame in a state's sequence: which image, for how long, and how long
+/// its row shows nothing before it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrameEntry {
     pub id: String,
     /// Milliseconds. `None` means "1 / fps".
     pub duration: Option<f64>,
+    /// Milliseconds of nothing before the frame, in a row other than the
+    /// pet's own (an effect that comes in later). `None` means none.
+    pub delay: Option<f64>,
 }
 
 impl<'de> Deserialize<'de> for FrameEntry {
@@ -58,11 +62,11 @@ impl<'de> Deserialize<'de> for FrameEntry {
         #[serde(untagged)]
         enum Raw {
             Id(String),
-            Full { id: String, duration: Option<f64> },
+            Full { id: String, duration: Option<f64>, delay: Option<f64> },
         }
         Ok(match Raw::deserialize(d)? {
-            Raw::Id(id) => FrameEntry { id, duration: None },
-            Raw::Full { id, duration } => FrameEntry { id, duration },
+            Raw::Id(id) => FrameEntry { id, duration: None, delay: None },
+            Raw::Full { id, duration, delay } => FrameEntry { id, duration, delay },
         })
     }
 }
@@ -134,6 +138,11 @@ impl StateSpec {
         entry.duration.map(|ms| ms / 1000.0).unwrap_or(1.0 / self.fps)
     }
 
+    /// Seconds the row shows nothing before an entry.
+    pub fn delay(entry: &FrameEntry) -> f64 {
+        entry.delay.unwrap_or(0.0).max(0.0) / 1000.0
+    }
+
     /// The rows to play: `tracks`, or `frames` as the only one.
     pub fn timeline_tracks(&self) -> Vec<FrameTrack> {
         match &self.tracks {
@@ -148,7 +157,7 @@ impl StateSpec {
 
     /// Seconds in one round: as long as the longest row.
     pub fn timeline_duration(&self) -> f64 {
-        self.timeline_tracks().iter().map(|t| t.frames.iter().map(|e| self.duration(e)).sum::<f64>()).fold(0.0, f64::max)
+        self.timeline_tracks().iter().map(|t| t.frames.iter().map(|e| StateSpec::delay(e) + self.duration(e)).sum::<f64>()).fold(0.0, f64::max)
     }
 
     /// How a state is played, whatever its file says: idle and sleep loop,
@@ -186,6 +195,53 @@ pub struct Display {
     pub height: f64,
 }
 
+/// The speech bubble as the maker set it: where it sits against its usual
+/// place, centred over the head (shares of the pet's height, x to the right
+/// and y down), its colours (0xRRGGBB), its text size in points, and how
+/// roomy it is (1 = as designed).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpeechStyle {
+    pub offset_x: f64,
+    pub offset_y: f64,
+    pub bubble_color: u32,
+    pub text_color: u32,
+    pub font_size: f32,
+    pub bubble_size: f32,
+}
+
+impl Default for SpeechStyle {
+    fn default() -> Self {
+        SpeechStyle { offset_x: 0.0, offset_y: 0.0, bubble_color: 0xFFFDF7, text_color: 0x353754, font_size: 13.0, bubble_size: 1.0 }
+    }
+}
+
+impl<'de> Deserialize<'de> for SpeechStyle {
+    /// Missing or unusable values keep the default; numbers are kept in range.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = Value::deserialize(d)?;
+        let number = |key: &str, lo: f64, hi: f64, fallback: f64| {
+            raw.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).map_or(fallback, |v| v.clamp(lo, hi))
+        };
+        let color = |key: &str, fallback: u32| {
+            raw.get(key)
+                .and_then(Value::as_str)
+                .and_then(|s| s.strip_prefix('#'))
+                .filter(|hex| hex.len() == 6)
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .unwrap_or(fallback)
+        };
+        let d = SpeechStyle::default();
+        Ok(SpeechStyle {
+            offset_x: number("offsetX", -2.0, 2.0, 0.0),
+            offset_y: number("offsetY", -2.0, 2.0, 0.0),
+            bubble_color: color("bubbleColor", d.bubble_color),
+            text_color: color("textColor", d.text_color),
+            font_size: number("fontSize", 10.0, 24.0, 13.0) as f32,
+            bubble_size: number("bubbleSize", 0.6, 2.0, 1.0) as f32,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct FrameRef {
     pub file: String,
@@ -199,6 +255,7 @@ pub struct PetManifest {
     pub display: Display,
     pub frames: BTreeMap<String, FrameRef>,
     pub states: BTreeMap<PetState, StateSpec>,
+    pub speech: SpeechStyle,
 }
 
 impl PetManifest {
@@ -212,6 +269,8 @@ impl PetManifest {
             display: Display,
             frames: BTreeMap<String, FrameRef>,
             states: BTreeMap<String, Value>,
+            #[serde(default)]
+            speech: Option<Value>,
         }
         let raw: Raw = serde_json::from_slice(json)
             .map_err(|e| Bilingual::new(format!("manifest.json 无法读取：{e}"), format!("manifest.json can't be read: {e}")))?;
@@ -233,6 +292,7 @@ impl PetManifest {
             display: raw.display,
             frames: raw.frames,
             states,
+            speech: raw.speech.and_then(|v| SpeechStyle::deserialize(v).ok()).unwrap_or_default(),
         })
     }
 
@@ -312,12 +372,28 @@ mod tests {
     }"#;
 
     #[test]
+    fn reads_the_speech_bubble_style_keeping_it_in_range() {
+        assert_eq!(PetManifest::parse(BASE.as_bytes()).unwrap().speech, SpeechStyle::default());
+        let styled = BASE.replace(
+            r#""display""#,
+            r##""speech": { "offsetX": 0.25, "offsetY": -9, "bubbleColor": "#353754", "textColor": "red", "fontSize": 40, "bubbleSize": 1.5 }, "display""##,
+        );
+        let speech = PetManifest::parse(styled.as_bytes()).unwrap().speech;
+        assert_eq!(speech.offset_x, 0.25);
+        assert_eq!(speech.offset_y, -2.0, "far offsets are pulled in");
+        assert_eq!(speech.bubble_color, 0x353754);
+        assert_eq!(speech.text_color, 0x353754, "not a colour: the default");
+        assert_eq!(speech.font_size, 24.0);
+        assert_eq!(speech.bubble_size, 1.5);
+    }
+
+    #[test]
     fn decodes_both_frame_forms_and_durations() {
         let manifest = PetManifest::parse(BASE.as_bytes()).unwrap();
         let idle = manifest.playable(PetState::Idle).unwrap();
         assert_eq!(
             idle.frames,
-            vec![FrameEntry { id: "a".into(), duration: None }, FrameEntry { id: "b".into(), duration: Some(500.0) }]
+            vec![FrameEntry { id: "a".into(), duration: None, delay: None }, FrameEntry { id: "b".into(), duration: Some(500.0), delay: None }]
         );
         assert_eq!(idle.frames.iter().map(|e| idle.duration(e)).collect::<Vec<_>>(), vec![0.25, 0.5]);
         assert!(manifest.validate().is_ok());

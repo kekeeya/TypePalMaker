@@ -522,7 +522,6 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .effect-tile-art { width: 58px; height: 54px; border-radius: 20px 18px 21px 17px; background: center / 100% 100% no-repeat; transform: rotate(-2deg); box-shadow: inset 0 -2px 0 rgba(70, 65, 115, 0.08); }
 /* Sized and placed from the reference screen: the body 62 × 48 px with its
    top-left at (408, 61) in the dialog. Fixed in px, whatever the window. */
-.create-mascot { position: absolute; right: 39px; top: 16px; width: 125px; height: 125px; pointer-events: none; }
 .dialog-close {
   position: absolute;
   right: 22px;
@@ -744,6 +743,7 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .icon-tap { background: #ffd4c2; }
 .icon-pet { background: #f9c9d5; }
 .icon-sleep { background: #ddd8ff; }
+.icon-dialogue { background: #c9ecea; border-radius: 13px 16px 12px 15px; }
 .editor-nav > button.active .cute-nav-icon { box-shadow: 0 3px 0 rgba(70, 65, 115, 0.12), inset 0 -2px 0 rgba(70, 65, 115, 0.08); }
 
 /* ── 通用 ────────────────────────────────────────────────────────────── */
@@ -969,6 +969,11 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 
 /* Two rows show (the tabs and their settings sit above); more scroll. */
 .timeline-scroll { flex: 1; min-height: 0; max-height: calc(43px + 2 * 105px + 12px); padding-bottom: 12px; overflow: auto; border-top: 1px solid #eee9e3; }
+/* A short window: a row and a half at most, so the preview above keeps its
+   room (the rest scrolls). */
+@media (max-height: 1000px) {
+  .timeline-scroll { max-height: calc(43px + 1.5 * 105px + 12px); }
+}
 .timeline-canvas {
   position: relative;
   min-height: 100%;
@@ -1015,11 +1020,14 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .frame-ruler > button b { position: absolute; right: 7px; bottom: 4px; font-size: 9px; font-weight: 600; color: var(--ink-soft); }
 .ruler-range { position: absolute; left: 0; top: 0; height: 100%; border-top: 6px solid #d6d2f8; border-left: 2px solid var(--purple-line); border-right: 2px solid var(--purple-line); pointer-events: none; z-index: 1; }
 
-.frame-track { display: flex; align-items: flex-start; padding: 3px 0 10px; min-height: 104px; border-bottom: 1px solid #eee9e3; }
+/* As wide as the row: a frame or a file may be dropped past the last one. */
+.frame-track { position: relative; flex: 1 0 auto; display: flex; align-items: flex-start; padding: 3px 0 10px; min-height: 104px; border-bottom: 1px solid #eee9e3; }
+.frame-track.drop-target { background: #f3f1fd; }
 .frame-clip {
   flex: none;
   position: relative;
   width: calc(var(--span) * var(--frame-cell));
+  margin-left: calc(var(--gap, 0) * var(--frame-cell));
   height: 93px;
   border-radius: 12px;
   background: #f3f1fb;
@@ -1029,7 +1037,23 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 }
 .frame-clip:active { cursor: grabbing; }
 .frame-clip.selected { border-color: #8380dc; background: #f5f3fe; z-index: 2; }
-.frame-clip.dragging { z-index: 5; box-shadow: 0 10px 22px rgba(70, 60, 140, 0.2); }
+.frame-clip.dragging { opacity: 0.35; }
+/* See-through, so the box where it would land shows under it. */
+.frame-clip.ghost { cursor: grabbing; opacity: 0.7; border-color: #8380dc; box-shadow: 0 10px 22px rgba(70, 60, 140, 0.25); }
+/* Where a dragged frame would land. */
+.drop-hint {
+  position: absolute;
+  top: 3px;
+  left: calc(var(--at) * var(--frame-cell));
+  width: calc(var(--span) * var(--frame-cell));
+  height: 93px;
+  border: 2px dashed var(--purple);
+  border-radius: 12px;
+  background: rgba(131, 128, 220, 0.12);
+  pointer-events: none;
+  z-index: 4;
+}
+.drop-hint.line { width: 4px; margin-left: -2px; border: 0; border-radius: 2px; background: var(--purple); }
 .frame-clip.replacing { border-color: var(--purple); border-style: dashed; }
 .clip-cells {
   position: absolute;
@@ -1144,6 +1168,7 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
   flex: 1;
   min-height: 0;
   border-radius: 18px;
+  /* Cream, or whatever the bubble shows on (set inline, `backdropFor`). */
   background: var(--cream);
   border: 1.5px solid #ece6dc;
   display: grid;
@@ -1196,19 +1221,33 @@ input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px s
 .variant-empty p { margin: 0 0 10px; color: var(--ink-soft); font-size: 11px; }
 .variant-empty div { display: flex; gap: 10px; }
 .primary-small { height: 34px; padding: 0 14px; border-radius: 11px; background: var(--purple); color: #fff; font-size: 11px; font-weight: 700; box-shadow: 0 3px 0 #5d55b8; }
-/* A line the pet may say, over the preview's top-right corner, its tail in
-   the middle as on the desktop. */
-/* The tail continues the bubble's outline: an outline-coloured triangle
-   just under the border, and a paper one over it that also covers the
-   border where the tail opens out of the bubble. */
-.line-bubble { position: absolute; top: 10px; right: -18px; z-index: 3; min-width: 76px; max-width: 180px; padding: 8px 12px 9px; display: grid; gap: 3px; text-align: center; border: 1px solid #e0d7cb; border-radius: 14px; background: #fffdf7; pointer-events: none; animation: bubble-rise 0.18s cubic-bezier(0.33, 1, 0.68, 1); }
 /* Comes in floating up a little, quickly, as on the desktop. */
 @keyframes bubble-rise { from { opacity: 0; translate: 0 6px; } }
-.line-bubble::before, .line-bubble::after { content: ""; position: absolute; border-style: solid; border-color: transparent; }
-.line-bubble::before { left: calc(50% - 9px); bottom: -10px; border-width: 10px 9px 0; border-top-color: #e0d7cb; }
-.line-bubble::after { left: calc(50% - 8px); bottom: -8.5px; border-width: 9px 8px 0; border-top-color: #fffdf7; }
-.line-bubble b { font-size: 12px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.line-bubble small { font-size: 9px; color: var(--ink-soft); font-weight: 600; }
 .row-hint { align-self: center; margin-left: 12px; color: var(--ink-soft); font-size: 11px; font-weight: 600; white-space: nowrap; }
-/* The desktop preview's bubble, centred over the pet's head as on the desktop. */
-.preview-bubble { top: 6%; left: 50%; right: auto; transform: translate(-50%, -70%); }
+
+/* The pet's speech bubble, as the desktop draws it (see SpeechBubble.tsx):
+   its bottom (the tail's tip) sits on the point given, the tail under the
+   body. Sizes and colours come inline. */
+.speech-bubble { position: absolute; z-index: 6; transform: translate(-50%, -100%); pointer-events: none; animation: bubble-rise 0.18s cubic-bezier(0.33, 1, 0.68, 1); }
+.speech-bubble.movable { pointer-events: auto; cursor: grab; touch-action: none; }
+.speech-bubble.movable:active { cursor: grabbing; }
+.speech-body { width: max-content; text-align: center; }
+.speech-body b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; }
+.speech-tail { display: block; margin-top: -1px; }
+.speech-bubble.up .speech-tail { margin: 0 0 -1px; }
+
+/* 对话: the preview over the bubble's settings, no timeline. */
+.dialogue-page { grid-template-rows: minmax(0, 1fr); }
+.dialogue-stage { flex-direction: column; }
+.dialogue-stage .canvas-viewport { padding-top: 48px; }
+/* Its background is whatever the bubble shows on (`backdropFor`). */
+.dialogue-paper { padding: 0; }
+.dialogue-paper .pet-box { outline: none; overflow: visible; }
+.dialogue-page .inspector .transform-group { margin-bottom: 14px; }
+.sample-line { flex: none; display: flex; align-items: center; gap: 14px; padding: 12px 20px 16px; border-top: 1px solid #eee9e3; background: var(--paper); }
+.sample-line label { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 700; }
+.sample-line input { width: 260px; height: 32px; padding: 0 12px; border: 1.5px solid #e6e0d8; border-radius: 10px; background: #fff; font: inherit; font-weight: 500; color: var(--ink); }
+.sample-line input:focus { outline: none; border-color: var(--purple); }
+.toolbar-note { color: var(--ink-soft); font-size: 11px; font-weight: 500; }
+.panel-note { margin: -8px 0 16px; color: var(--ink-soft); font-size: 10px; text-align: center; }
+.inspector .background-picker { margin-top: 14px; }
